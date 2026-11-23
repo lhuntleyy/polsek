@@ -79,6 +79,11 @@ export const manualTicketSchema = z
   .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
     message: "Latitude dan longitude harus diisi berpasangan",
     path: ["lat"]
+  })
+  // Lokasi wajib untuk semua laporan, termasuk yang diinput piket.
+  .refine((value) => value.lat !== undefined || (value.address ?? "").trim().length >= 3, {
+    message: "Lokasi kejadian wajib diisi (alamat atau titik peta)",
+    path: ["address"]
   });
 
 export const regionSchema = z.object({

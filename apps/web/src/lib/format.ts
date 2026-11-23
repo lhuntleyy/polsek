@@ -83,7 +83,7 @@ export function primaryNext(status: TicketStatus): TicketStatus | null {
 }
 
 export function primaryLabel(status: TicketStatus): string {
-  if (status === "baru") return "Terima Laporan";
+  if (status === "baru") return "Terima & Kirim ke URC";
   if (status === "diterima") return "OTW ke TKP";
   if (status === "otw") return "Tiba di TKP";
   if (status === "ditkp") return "Selesaikan";

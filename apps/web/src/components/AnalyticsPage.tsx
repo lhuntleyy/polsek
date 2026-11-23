@@ -138,6 +138,11 @@ export function AnalyticsPage({
               <div className="kpi-delta">{summary.active} masih aktif</div>
             </div>
             <div className="kpi-card">
+              <div className="kpi-label">Diproses</div>
+              <div className="kpi-value">{summary.processing ?? 0}</div>
+              <div className="kpi-delta">{summary.waiting ?? 0} menunggu diterima</div>
+            </div>
+            <div className="kpi-card">
               <div className="kpi-label">P1 aktif</div>
               <div className="kpi-value">{summary.p1Active}</div>
               <div className="kpi-delta">Perlu perhatian</div>
@@ -161,6 +166,61 @@ export function AnalyticsPage({
               <div className="kpi-delta">p90 {formatSeconds(summary.response.p90OtwSeconds)}</div>
             </div>
           </div>
+
+          {summary.topLocations ? (
+            <section className="panel chart-card loc-rank-card">
+              <header className="card-head">
+                <div>
+                  <div className="eyebrow">LOKASI TERBANYAK</div>
+                  <h3>Desa/kelurahan &amp; jenis kasus</h3>
+                </div>
+                <Flame size={18} className="muted" />
+              </header>
+              <div className="loc-rank">
+                <div className="loc-rank-row loc-rank-head">
+                  <span>#</span>
+                  <span>Lokasi</span>
+                  <span>Kasus terbanyak</span>
+                  <span>Rincian kasus</span>
+                  <span className="num">Total</span>
+                  <span className="num">P1</span>
+                  <span className="num">Diproses</span>
+                  <span className="num">Selesai</span>
+                </div>
+                {summary.topLocations.map((loc, index) => (
+                  <div className="loc-rank-row" key={loc.id ?? "none"}>
+                    <span className="rank">{String(index + 1).padStart(2, "0")}</span>
+                    <span className="loc-name">
+                      {loc.name}
+                      <small>Terakhir {timeAgo(loc.lastAt)}</small>
+                    </span>
+                    <span className="loc-top">
+                      {loc.topCategory ? `${loc.topCategory.label} (${loc.topCategory.count})` : "—"}
+                    </span>
+                    <span className="loc-cats">
+                      {loc.categories.map((item) => (
+                        <span className="loc-chip" key={item.category}>
+                          {CATEGORY_META[item.category]?.short ?? item.label}{" "}
+                          <b>{item.count}</b>
+                        </span>
+                      ))}
+                    </span>
+                    <span className="num"><b>{loc.count}</b></span>
+                    <span className="num">{loc.p1}</span>
+                    <span className="num">{loc.processing}</span>
+                    <span className="num">{loc.closed}</span>
+                  </div>
+                ))}
+                {summary.topLocations.length === 0 ? (
+                  <div className="data-empty">Belum ada laporan pada periode ini.</div>
+                ) : null}
+              </div>
+              <p className="fine-print">
+                Diurutkan dari jumlah laporan terbanyak. "Belum terpetakan" = lokasi belum cocok
+                dengan polygon desa.
+              </p>
+            </section>
+          ) : null}
 
           <div className="analytics-grid">
             <section className="panel chart-card span-2">

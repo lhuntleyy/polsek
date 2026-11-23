@@ -237,6 +237,7 @@ async function createManualTicket(
       priority: payload.priority,
       title: payload.title,
       description: "Tiket uji Fase 4.",
+      address: "Jl. Uji Fase 4 No. 1",
       lat: payload.lat,
       lng: payload.lng,
       reporterConsent: true
@@ -338,11 +339,30 @@ describe("WhatsApp conversation engine", () => {
       targetJid: string;
       payload: { text?: string };
     }>;
-    const groupMessage = messages.find(
-      (item) => item.targetJid === GROUP_JID && item.payload.text?.includes(ticket.ticketNo)
-    );
-    expect(groupMessage).toBeTruthy();
-    expect(groupMessage?.payload.text).toContain(ticket.ticketNo);
+    // Laporan baru belum masuk grup URC sebelum diterima piket.
+    expect(
+      messages.some(
+        (item) => item.targetJid === GROUP_JID && item.payload.text?.includes(ticket.ticketNo)
+      )
+    ).toBe(false);
+
+    const accept = await app.inject({
+      method: "POST",
+      url: `/api/tickets/${ticket.id}/transition`,
+      headers: { cookie },
+      payload: { to: "diterima" }
+    });
+    expect(accept.statusCode).toBe(200);
+    const groupRow = app.sqlite
+      .prepare(
+        "SELECT payload_json FROM outbound_messages WHERE target_jid = ? AND payload_json LIKE ?"
+      )
+      .get(GROUP_JID, `%${ticket.ticketNo}%`) as { payload_json: string } | undefined;
+    expect(groupRow).toBeTruthy();
+    const groupText = (JSON.parse(groupRow!.payload_json) as { text: string }).text;
+    expect(groupText).toContain(ticket.ticketNo);
+    expect(groupText).toContain("Diterima piket:");
+    expect(groupText).toContain("Budi Santoso");
   });
 
   it("deduplicates the same WhatsApp message id", async () => {
@@ -384,11 +404,24 @@ describe("WhatsApp conversation engine", () => {
     // Kata kunci saja belum membuat P1 (mencegah alarm palsu).
     expect(await countP1()).toBe(before);
 
+    for (const step of [
+      { type: "text" as const, text: "1" },
+      { type: "text" as const, text: "Siti Aminah" }
+    ]) {
+      await app.inject({
+        method: "POST",
+        url: "/internal/wa/inbound",
+        headers: internalHeaders(),
+        payload: inbound(sender, step.type, step)
+      });
+    }
+    // Lokasi wajib: tiket P1 belum dibuat sebelum lokasi dikirim.
+    expect(await countP1()).toBe(before);
     await app.inject({
       method: "POST",
       url: "/internal/wa/inbound",
       headers: internalHeaders(),
-      payload: inbound(sender, "text", { text: "1" })
+      payload: inbound(sender, "location", { location: { lat: -6.26, lng: 106.982 } })
     });
     const list = await app.inject({
       method: "GET",
@@ -429,20 +462,51 @@ describe("WhatsApp conversation engine", () => {
     expect(JSON.parse(row.context_json).description).toContain("banjir");
   });
 
-  it("creates P1 immediately when the reporter explicitly writes DARURAT", async () => {
+  it("creates P1 from DARURAT once the reason, name, and location are given", async () => {
     const sender = "6281111111124@s.whatsapp.net";
-    await app.inject({
-      method: "POST",
-      url: "/internal/wa/inbound",
-      headers: internalHeaders(),
-      payload: inbound(sender, "text", { text: "DARURAT rumah warga terbakar" })
-    });
-    const ticket = app.sqlite
-      .prepare(
-        "SELECT t.priority FROM tickets t JOIN reporters r ON r.id = t.reporter_id WHERE r.wa_jid = ?"
-      )
-      .get(sender) as { priority: string } | undefined;
+    const send = (step: { type: "text" | "location"; text?: string; location?: { lat: number; lng: number } }) =>
+      app.inject({
+        method: "POST",
+        url: "/internal/wa/inbound",
+        headers: internalHeaders(),
+        payload: inbound(sender, step.type, step)
+      });
+    const ticketFor = () =>
+      app.sqlite
+        .prepare(
+          "SELECT t.priority, t.category, t.title FROM tickets t JOIN reporters r ON r.id = t.reporter_id WHERE r.wa_jid = ?"
+        )
+        .get(sender) as { priority: string; category: string; title: string } | undefined;
+    await send({ type: "text", text: "DARURAT rumah warga terbakar" });
+    await send({ type: "text", text: "Warga Darurat" });
+    expect(ticketFor()).toBeUndefined();
+    await send({ type: "text", text: "LEWATI" });
+    expect(ticketFor()).toBeUndefined();
+    await send({ type: "location", location: { lat: -6.26, lng: 106.982 } });
+    const ticket = ticketFor();
     expect(ticket?.priority).toBe("P1");
+    expect(ticket?.category).toBe("kebakaran");
+    expect(ticket?.title).toContain("rumah warga terbakar");
+  });
+
+  it("does not create P1 when DARURAT is sent without saying what happened", async () => {
+    const sender = "6281111111126@s.whatsapp.net";
+    for (const text of ["DARURAT", "tolong darurat", "test test"]) {
+      await app.inject({
+        method: "POST",
+        url: "/internal/wa/inbound",
+        headers: internalHeaders(),
+        payload: inbound(sender, "text", { text })
+      });
+    }
+    const tickets = app.sqlite
+      .prepare("SELECT COUNT(*) AS n FROM tickets t JOIN reporters r ON r.id = t.reporter_id WHERE r.wa_jid = ?")
+      .get(sender) as { n: number };
+    expect(tickets.n).toBe(0);
+    const row = app.sqlite
+      .prepare("SELECT state FROM conversations WHERE wa_jid = ?")
+      .get(sender) as { state: string };
+    expect(row.state).toBe("AWAIT_EMERGENCY_DESC");
   });
 
   it("starts a normal report (not P1) when a location is shared without context", async () => {
@@ -634,6 +698,14 @@ describe("WhatsApp conversation engine", () => {
       });
       expect(response.statusCode).toBe(200);
       const reporterText = lastReporterReply()?.payload_json ?? "";
+      const officerName = (
+        app.sqlite
+          .prepare("SELECT name FROM officers WHERE wa_jid = ?")
+          .get("628000000005@s.whatsapp.net") as { name: string }
+      ).name;
+      // Nama petugas pengirim command tampil di grup dan di pesan pelapor.
+      expect(reporterText).toContain(officerName);
+      expect(lastGroupReply()?.payload_json ?? "").toContain(officerName);
       if (command === "otw") expect(reporterText).toContain("sedang jalan ke TKP");
       if (command === "tiba") expect(reporterText).toContain("sudah tiba di TKP");
       if (command === "selesai") {
@@ -974,11 +1046,21 @@ describe("WhatsApp media pipeline", () => {
     expect(detail.json().media[0].id).toBe(mediaId);
     expect(detail.json().media[0].thumbUrl).toContain("/thumb");
 
-    const groupMedia = app.sqlite
-      .prepare(
-        "SELECT target_jid, payload_json FROM outbound_messages WHERE kind = 'media' AND target_jid = ?"
-      )
-      .all(GROUP_JID) as Array<{ target_jid: string; payload_json: string }>;
+    const groupMediaQuery = () =>
+      app.sqlite
+        .prepare(
+          "SELECT target_jid, payload_json FROM outbound_messages WHERE kind = 'media' AND target_jid = ?"
+        )
+        .all(GROUP_JID) as Array<{ target_jid: string; payload_json: string }>;
+    expect(groupMediaQuery().some((row) => row.payload_json.includes(mediaId))).toBe(false);
+    const accept = await app.inject({
+      method: "POST",
+      url: `/api/tickets/${ticket.id}/transition`,
+      headers: { cookie },
+      payload: { to: "diterima" }
+    });
+    expect(accept.statusCode).toBe(200);
+    const groupMedia = groupMediaQuery();
     expect(groupMedia.length).toBeGreaterThan(0);
     expect(groupMedia.some((row) => row.payload_json.includes(mediaId))).toBe(true);
 
@@ -1071,6 +1153,7 @@ describe("WhatsApp media pipeline", () => {
         category: "lain",
         title: "Tiket bukti grup URC",
         description: "Untuk uji lampiran foto grup.",
+        address: "Jl. Uji Grup No. 2",
         reporterConsent: true
       }
     });
@@ -1291,7 +1374,8 @@ describe("Phase 4 operations", () => {
     const jids = targets.map((row) => row.target_jid);
     expect(jids).toContain("628000000003@s.whatsapp.net");
     expect(jids).toContain("628000000004@s.whatsapp.net");
-    expect(jids).toContain(GROUP_JID);
+    // Tiket belum diterima piket: eskalasi tidak dikirim ke grup URC.
+    expect(jids).not.toContain(GROUP_JID);
     expect(targets.some((row) => row.payload_json.includes("ESKALASI PAWAS"))).toBe(true);
     expect(targets.some((row) => row.payload_json.includes("ESKALASI KAPOLSEK"))).toBe(true);
 
@@ -1327,6 +1411,16 @@ describe("Phase 5 analytics, export, and admin", () => {
     expect(body.response).toHaveProperty("p90AckSeconds");
     expect(body.sla).toHaveProperty("p1AckWithinTarget");
     expect(body.targets.ackSeconds).toBeGreaterThan(0);
+    expect(typeof body.processing).toBe("number");
+    expect(typeof body.waiting).toBe("number");
+    expect(body.processing + body.waiting).toBeLessThanOrEqual(body.active);
+    expect(Array.isArray(body.topLocations)).toBe(true);
+    expect(body.topLocations.length).toBeGreaterThan(0);
+    const firstLoc = body.topLocations[0];
+    expect(firstLoc.count).toBeGreaterThanOrEqual(body.topLocations.at(-1).count);
+    expect(firstLoc.categories.reduce((sum: number, c: { count: number }) => sum + c.count, 0)).toBe(
+      firstLoc.count
+    );
   });
 
   it("exports CSV, XLSX, and PDF monthly reports", async () => {
@@ -2601,11 +2695,11 @@ describe("Audit hardening regressions", () => {
       headers: internalHeaders(),
       payload: inbound(outsideSender, "text", { text: "DARURAT ADA BEGAL" })
     });
+    // Tiket darurat baru dibuat setelah nama + lokasi lengkap.
     const outsideConvBefore = app.sqlite
       .prepare("SELECT context_json FROM conversations WHERE wa_jid = ?")
       .get(outsideSender) as { context_json: string };
-    const orphanId = JSON.parse(outsideConvBefore.context_json).emergencyTicketId as string;
-    expect(orphanId).toBeTruthy();
+    expect(JSON.parse(outsideConvBefore.context_json).emergencyTicketId).toBeUndefined();
 
     await app.inject({
       method: "POST",
@@ -2621,6 +2715,14 @@ describe("Audit hardening regressions", () => {
         location: { lat: -6.9, lng: 107.6, accuracyM: 12 }
       })
     });
+    const orphanId = (
+      app.sqlite
+        .prepare(
+          "SELECT t.id FROM tickets t JOIN reporters r ON r.id = t.reporter_id WHERE r.wa_jid = ?"
+        )
+        .get(outsideSender) as { id: string }
+    ).id;
+    expect(orphanId).toBeTruthy();
     const outsideTicket = app.sqlite
       .prepare("SELECT status, reject_reason, location_status, lat FROM tickets WHERE id = ?")
       .get(orphanId) as {
@@ -2645,7 +2747,7 @@ describe("Audit hardening regressions", () => {
       "Warga Kadaluarsa",
       "2",
       "Gangguan kamtibmas di ujung gang",
-      "LEWATI",
+      "Jl. Ujung Gang RT 01",
       "SELESAI"
     ]) {
       await app.inject({

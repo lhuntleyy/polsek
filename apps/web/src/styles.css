@@ -1799,7 +1799,7 @@ kbd {
 /* ============================ ANALYTICS ============================ */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 9px;
   margin-bottom: 10px;
 }
@@ -1821,6 +1821,46 @@ kbd {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+/* Lokasi terbanyak: desa/kelurahan + jenis kasus */
+.loc-rank-card { margin-bottom: 10px; }
+.loc-rank { display: flex; flex-direction: column; font-size: 12px; }
+.loc-rank-row {
+  display: grid;
+  grid-template-columns: 28px minmax(120px, 1.3fr) minmax(110px, 1fr) minmax(160px, 2fr) repeat(4, 58px);
+  gap: 8px;
+  align-items: center;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.loc-rank-row:last-child { border-bottom: 0; }
+.loc-rank-head {
+  font: 500 9px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.loc-rank-row .rank { font-family: var(--font-mono); color: var(--muted); }
+.loc-rank-row .num { text-align: right; font-family: var(--font-mono); }
+.loc-name { display: flex; flex-direction: column; font-weight: 600; }
+.loc-name small { font-weight: 400; color: var(--muted); font-size: 10px; }
+.loc-top { font-weight: 500; }
+.loc-cats { display: flex; flex-wrap: wrap; gap: 4px; }
+.loc-chip {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  font-size: 10px;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .loc-rank-row { grid-template-columns: 22px 1fr 1fr 44px 52px; }
+  .loc-rank-row > :nth-child(4),
+  .loc-rank-row > :nth-child(6),
+  .loc-rank-row > :nth-child(8) { display: none; }
 }
 .chart-card { padding: 13px 14px; display: flex; flex-direction: column; min-height: 0; }
 .chart-card.span-2 { grid-column: span 2; }
@@ -2553,7 +2593,7 @@ body.wall .wall-exit { display: inline-flex !important; }
 @media (max-width: 1480px) {
   .board { grid-template-columns: 348px minmax(0, 1fr) 390px; }
   .handover-grid { grid-template-columns: 320px minmax(0, 1fr) 340px; }
-  .kpi-grid { grid-template-columns: repeat(5, 1fr); }
+  .kpi-grid { grid-template-columns: repeat(6, 1fr); }
 }
 
 @media (max-width: 1320px) {

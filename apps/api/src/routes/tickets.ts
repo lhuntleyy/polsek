@@ -8,7 +8,6 @@ import {
   classifyLocation,
   isActiveStatus,
   manualTicketSchema,
-  maskPhone,
   mergeTicketSchema,
   noteSchema,
   ticketQuerySchema,
@@ -31,7 +30,12 @@ import { enqueueOutbox } from "../lib/outbox.js";
 import { sendPushToRoles } from "../lib/push.js";
 import { readSettings } from "../lib/settings.js";
 import { nextTicketNumber } from "../lib/ticket-number.js";
-import { reporterStatusMessage, resolveReporterJid } from "../lib/wa-status.js";
+import {
+  groupStatusMessage,
+  reporterStatusMessage,
+  resolveReporterJid
+} from "../lib/wa-status.js";
+import { dispatchTicketToUrc } from "../bot/conversation.js";
 
 interface Cursor {
   createdAt: string;
@@ -668,6 +672,48 @@ export function registerTicketRoutes(app: FastifyInstance): void {
           userAgent: request.headers["user-agent"] ?? null
         });
 
+        // Laporan baru diteruskan ke grup URC hanya setelah piket menerimanya.
+        if (
+          input.to === "diterima" &&
+          current.status === "baru" &&
+          !current.ackAt &&
+          !current.isDemo
+        ) {
+          dispatchTicketToUrc(app, id, user.name);
+        }
+
+        // Nama petugas: untuk OTW pakai petugas yang ditugaskan, selain itu user aktif.
+        const assigneeName =
+          input.to === "otw" && typeof patch.assignedTo === "string"
+            ? app.db
+                .select({ name: officers.name })
+                .from(officers)
+                .where(eq(officers.id, patch.assignedTo))
+                .get()?.name
+            : undefined;
+        const actorName = assigneeName ?? user.name;
+        const urcJid = readSettings(app.db, app.config).waGroupUrcJid;
+        if (
+          urcJid &&
+          current.ackAt &&
+          !current.isDemo &&
+          (["otw", "ditkp", "selesai", "ditunda", "ditolak"] as TicketStatus[]).includes(input.to)
+        ) {
+          enqueueOutbox(app.db, {
+            targetJid: urcJid,
+            kind: "text",
+            payload: {
+              text: groupStatusMessage(
+                current.ticketNo,
+                input.to,
+                input.note ?? input.reason ?? null,
+                0,
+                actorName
+              )
+            }
+          });
+        }
+
         if (!current.isDemo) {
           const reporter = app.db
             .select({ waJid: reporters.waJid, phoneEnc: reporters.phoneEnc })
@@ -685,7 +731,8 @@ export function registerTicketRoutes(app: FastifyInstance): void {
                 text: reporterStatusMessage(
                   current.ticketNo,
                   input.to,
-                  input.note ?? input.reason ?? current.closeNote ?? null
+                  input.note ?? input.reason ?? current.closeNote ?? null,
+                  input.to === "ditolak" ? null : actorName
                 )
               }
             });
@@ -890,34 +937,7 @@ export function registerTicketRoutes(app: FastifyInstance): void {
           userAgent: request.headers["user-agent"] ?? null
         });
 
-        if (priority === "P1" && settings.waGroupUrcJid) {
-          const phoneDisplay = settings.piiMasking
-            ? maskPhone(input.reporterPhone)
-            : input.reporterPhone;
-          const regionName = regionId
-            ? regionList.find((r) => r.id === regionId)?.name ?? null
-            : null;
-          const maps =
-            input.lat !== undefined && input.lng !== undefined
-              ? `https://maps.google.com/?q=${input.lat},${input.lng}`
-              : "-";
-          const short = ticketNo.split("-").at(-1) ?? ticketNo;
-          enqueueOutbox(app.db, {
-            targetJid: settings.waGroupUrcJid,
-            kind: "text",
-            payload: {
-              text: [
-                `🚨 *${priority} · ${categoryMeta.short}*`,
-                `#${ticketNo} — ${input.title}`,
-                `Pelapor: ${reporter.name} (${phoneDisplay})`,
-                `Lokasi: ${input.address ?? regionName ?? "Belum diverifikasi"}`,
-                `Peta: ${maps}`,
-                `Waktu: ${formatLocalTime(now, settings.unitTimezone)}`,
-                `Aksi: /otw ${short} | /tiba ${short} | /selesai ${short}`
-              ].join("\n")
-            }
-          });
-        }
+        // Grup URC dikabari setelah piket menerima tiket (dispatchTicketToUrc).
       };
 
       const tx = app.sqlite.transaction(runCreate);

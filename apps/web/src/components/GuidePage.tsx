@@ -68,7 +68,7 @@ export function GuidePage() {
             <ShieldCheck size={18} className="muted" />
           </header>
           <Step n={1} title="Buka tiket">Cek nama, nomor masked, lokasi, deskripsi, dan media.</Step>
-          <Step n={2} title="Terima Laporan">Status berubah ke <code>diterima</code> dan pelapor mendapat update.</Step>
+          <Step n={2} title="Terima & Kirim ke URC">Status berubah ke <code>diterima</code>, laporan diteruskan ke grup URC, dan pelapor mendapat update.</Step>
           <Step n={3} title="OTW → Tiba di TKP">Klik saat berangkat dan saat tiba.</Step>
           <Step n={4} title="Selesaikan">Isi catatan penanganan, lalu klik Selesaikan.</Step>
           <p className="guide-note">

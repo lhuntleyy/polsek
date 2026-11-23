@@ -161,17 +161,24 @@ Seed development membuat akun demo:
 
 ```text
 Warga kirim pesan
- ├─ "LAPOR"                → nama (sekali) → kategori → cerita → lokasi → media → SELESAI → ringkasan → 1 = Kirim
- │                            → tiket P2/P3 + forward grup URC
- ├─ ada kata "DARURAT"     → tiket P1 LANGSUNG + alarm dashboard + grup URC + push
- │                            → (nama) → minta lokasi → foto/detail → SELESAI
+ ├─ "LAPOR"                → nama (sekali) → kategori → cerita → lokasi (WAJIB) → media → SELESAI → ringkasan → 1 = Kirim
+ │                            → tiket P2/P3 masuk dashboard piket
+ ├─ "DARURAT <kejadian>"   → bot menanyakan yang kurang: kejadian apa (wajib, anti-iseng) → jenis → nama → lokasi (WAJIB)
+ │                            → tiket P1 + alarm dashboard + push → foto/detail → SELESAI
+ │                            ("DARURAT" saja / "test" / "tolong" tidak membuat tiket)
  ├─ kata kunci lain         → bot bertanya "Apakah ini DARURAT?"
- │  (banjir, laka, begal…)    1 = YA → P1   ·   2 = TIDAK → laporan biasa (teks awal jadi deskripsi)
+ │  (banjir, laka, begal…)    1 = YA → alur darurat di atas   ·   2 = TIDAK → laporan biasa
  ├─ share location saja     → mulai laporan biasa dengan lokasi terisi (ketik DARURAT untuk P1)
  ├─ "STATUS" / "STATUS BKS-…" → status tiket milik pelapor
  └─ "NAMA …", "BATAL", "BANTU"
+
+Piket klik "Terima & Kirim ke URC" di dashboard
+ └─ baru saat itu tiket diteruskan ke grup URC (kronologi, pelapor, lokasi, peta, media, nama piket)
 ```
 
+- **Lokasi wajib** untuk semua laporan: share location, link Google Maps, atau alamat/nama desa. Tiket manual dari dashboard juga wajib alamat atau titik peta. Link yang dikirim saat bot menanyakan nama disimpan sebagai lokasi, bukan nama.
+- **Grup URC hanya menerima laporan yang sudah diterima piket.** Eskalasi tiket yang belum diterima hanya ke Pawas/Kapolsek. Bila pelapor melengkapi lokasi setelah tiket diterima, grup mendapat "Update lokasi". Pesan grup menampilkan riwayat laporan palsu pelapor bila ada.
+- **Nama petugas di status:** `/otw`, `/tiba`, `/selesai`, `/tunda` menampilkan nama petugas pengirim (nama di menu Petugas, mis. "Bripka Raehan") di grup dan di pesan ke pelapor. Aksi dari dashboard memakai nama user (OTW: petugas yang ditugaskan) dan juga dikabarkan ke grup.
 - **Lokasi di luar wilkum:** laporan biasa diarahkan ke 110/Polsek terdekat. Laporan **darurat tidak pernah ditolak otomatis**; tiket tetap aktif dengan tanda "di luar wilkum" dan piket yang memutuskan.
 - **Grup URC:** `/otw`, `/tiba`, `/selesai`, `/tunda <alasan>`, `/status`, `/id`. Nomor pendek (`/otw 3`) berarti tiket **hari ini**; bila tidak ada, satu-satunya tiket aktif bernomor itu; bila ambigu, bot meminta nomor lengkap.
 - **Keandalan:** bot menyimpan setiap pesan ke antrean di disk dan mengirim ulang sampai API menerima, sehingga laporan tidak hilang saat API restart. Urutan pesan per chat dijaga.
@@ -187,7 +194,7 @@ Warga kirim pesan
 - Pengaturan unit/SLA/WA/DPO/retensi.
 - Registry wilayah (GeoJSON) + petugas.
 - Audit log append-only.
-- Analitik ringkas dari database.
+- Analitik dari database: volume, SLA, heatmap, titik rawan, jumlah **diproses / menunggu diterima**, dan **lokasi terbanyak** (desa/kelurahan + rincian jenis kasus).
 - Web: login, live board, detail, aksi status, pencarian, alarm, analitik.
 - Web **Pengaturan admin**: identitas unit, WA, DPO, retensi, SLA, upload polygon wilayah.
 - **Bot Baileys**: QR pairing, auto-reconnect, inbound teks/lokasi/media, state machine percakapan, emergency P1, outbox worker, forward grup teks + media, command `/otw`, `/tiba`, `/selesai`, `/tunda`, `/status`, `/id`.

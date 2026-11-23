@@ -293,10 +293,28 @@ export interface ManualTicketPayload {
   reporterConsent: true;
 }
 
+export interface AnalyticsLocationRank {
+  id: string | null;
+  name: string;
+  count: number;
+  p1: number;
+  processing: number;
+  closed: number;
+  topCategory: { category: string; label: string; count: number } | null;
+  categories: Array<{ category: string; label: string; count: number }>;
+  lastAt: string;
+}
+
 export interface AnalyticsSummary {
   period: { from: string | null; to: string | null };
   total: number;
   active: number;
+  /** Belum diterima piket. */
+  waiting?: number;
+  /** Sudah diterima dan sedang ditangani (diterima/otw/ditkp/ditunda). */
+  processing?: number;
+  handled?: number;
+  topLocations?: AnalyticsLocationRank[];
   closed: number;
   rejected?: number;
   falseReports: number;

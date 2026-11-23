@@ -95,6 +95,7 @@ async function createManual(cookie: string, overrides: Record<string, unknown> =
       category: "tawuran",
       title: "Tiket uji audit",
       source: "telepon",
+      address: "Jl. Uji Audit No. 3",
       reporterConsent: true,
       ...overrides
     }
@@ -384,6 +385,8 @@ describe("WhatsApp abuse & identity", () => {
   it("marks LID-only reporters as having no real phone number", async () => {
     const sender = "123456789012345@lid";
     await inbound(sender, "DARURAT ada kebakaran");
+    await inbound(sender, "Warga LID");
+    await inbound(sender, "Jl. Mawar No. 5 RT 02");
     const reporter = app.sqlite
       .prepare("SELECT phone_verified FROM reporters WHERE wa_jid = ?")
       .get(sender) as { phone_verified: number };

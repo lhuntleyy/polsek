@@ -183,8 +183,10 @@ export function ManualTicketModal({ open, busy, onClose, onCreate }: ManualTicke
             />
           </label>
           <label className="field field-wide">
-            <span>Alamat / patokan</span>
+            <span>Alamat / patokan (wajib)</span>
             <input
+              required
+              minLength={3}
               value={address}
               onChange={(event) => setAddress(event.target.value)}
               placeholder="Jl. ... RT/RW ..."

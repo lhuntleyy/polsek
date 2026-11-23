@@ -2,6 +2,7 @@ import { and, eq, gte, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
   analyticsQuerySchema,
+  CATEGORY_META,
   CATEGORIES,
   PRIORITIES,
   TICKET_STATUSES,
@@ -25,6 +26,19 @@ const WEEKDAY_MAP: Record<string, number> = {
   Sun: 6
 };
 const ACTIVE_STATUSES: TicketStatus[] = ["baru", "diterima", "otw", "ditkp", "ditunda"];
+/** Sudah diterima piket dan sedang ditangani (belum final). */
+const PROCESSING_STATUSES: TicketStatus[] = ["diterima", "otw", "ditkp", "ditunda"];
+
+interface LocationRankEntry {
+  id: string | null;
+  name: string;
+  count: number;
+  p1: number;
+  processing: number;
+  closed: number;
+  categories: Map<string, number>;
+  lastAt: string;
+}
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -152,6 +166,7 @@ export function registerAnalyticsRoutes(app: FastifyInstance): void {
       >();
 
       let falseReports = 0;
+      const locationRank = new Map<string, LocationRankEntry>();
 
       for (const row of rows) {
         byStatus[row.status as TicketStatus] = (byStatus[row.status as TicketStatus] ?? 0) + 1;
@@ -167,6 +182,31 @@ export function registerAnalyticsRoutes(app: FastifyInstance): void {
           };
           entry.count += 1;
           byRegion.set(row.regionId, entry);
+        }
+
+        // Ranking lokasi (desa/kelurahan) + komposisi jenis kasus. Tiket tanpa
+        // wilayah dikumpulkan sebagai "Belum terpetakan".
+        {
+          const key = row.regionId ?? "__none";
+          const loc = locationRank.get(key) ?? {
+            id: row.regionId ?? null,
+            name: row.regionName ?? "Belum terpetakan",
+            count: 0,
+            p1: 0,
+            processing: 0,
+            closed: 0,
+            categories: new Map<string, number>(),
+            lastAt: row.createdAt
+          };
+          loc.count += 1;
+          if (row.priority === "P1") loc.p1 += 1;
+          if (PROCESSING_STATUSES.includes(row.status as TicketStatus)) loc.processing += 1;
+          if (row.status === "selesai") loc.closed += 1;
+          loc.categories.set(row.category, (loc.categories.get(row.category) ?? 0) + 1);
+          if (new Date(row.createdAt).getTime() > new Date(loc.lastAt).getTime()) {
+            loc.lastAt = row.createdAt;
+          }
+          locationRank.set(key, loc);
         }
 
         const created = new Date(row.createdAt);
@@ -256,6 +296,36 @@ export function registerAnalyticsRoutes(app: FastifyInstance): void {
         period: { from: query.from ?? null, to: query.to ?? null },
         total: rows.length,
         active,
+        waiting: byStatus.baru ?? 0,
+        processing: rows.filter((row) => PROCESSING_STATUSES.includes(row.status as TicketStatus))
+          .length,
+        handled: rows.filter((row) => row.ackAt !== null).length,
+        topLocations: Array.from(locationRank.values())
+          .map((loc) => {
+            const categories = Array.from(loc.categories.entries())
+              .map(([category, count]) => ({
+                category,
+                label: CATEGORY_META[category as Category]?.label ?? category,
+                count
+              }))
+              .sort((a, b) => b.count - a.count);
+            return {
+              id: loc.id,
+              name: loc.name,
+              count: loc.count,
+              p1: loc.p1,
+              processing: loc.processing,
+              closed: loc.closed,
+              topCategory: categories[0] ?? null,
+              categories,
+              lastAt: loc.lastAt
+            };
+          })
+          .sort(
+            (a, b) =>
+              b.count - a.count || new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
+          )
+          .slice(0, 10),
         closed: byStatus.selesai,
         rejected: byStatus.ditolak,
         falseReports,

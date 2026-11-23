@@ -27,4 +27,7 @@ TMP="$(mktemp /tmp/sigap-wilkum-XXXXXX.geojson)"
 cp "$FILE" "$TMP"; chown sigap:sigap "$TMP"; chmod 600 "$TMP"
 trap 'rm -f "$TMP"' EXIT
 
-sudo -u sigap bash -c "set -a; . /etc/sigap/api.env; set +a; cd '$APP_DIR/apps/api' && node dist/import-regions.js '$TMP' ${EXTRA[*]}"
+# Pakai Node yang sama dengan service API. sudo -u mereset PATH, jadi path
+# Node privat (/opt/sigap-node) harus ditulis lengkap bila ada.
+NODE_BIN="$(command -v /opt/sigap-node/bin/node || command -v node)"
+sudo -u sigap bash -c "set -a; . /etc/sigap/api.env; set +a; cd '$APP_DIR/apps/api' && '$NODE_BIN' dist/import-regions.js '$TMP' ${EXTRA[*]}"

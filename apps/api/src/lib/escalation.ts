@@ -46,7 +46,8 @@ function escalate(
     .map((officer) => officer.waJid)
     .filter((jid): jid is string => Boolean(jid));
 
-  if (settings.waGroupUrcJid) recipients.push(settings.waGroupUrcJid);
+  // Grup URC baru dilibatkan setelah piket menerima laporan.
+  if (settings.waGroupUrcJid && ticket.ackAt) recipients.push(settings.waGroupUrcJid);
   const targets = [...new Set(recipients)];
 
   const reporter = app.db.select().from(reporters).where(eq(reporters.id, ticket.reporterId)).get();

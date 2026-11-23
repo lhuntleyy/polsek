@@ -73,7 +73,11 @@ export interface ConversationResult {
 }
 
 interface ConversationContext {
-  intent?: "report" | "emergency" | "rename";
+  /**
+   * `emergency_draft`: warga memulai DARURAT tetapi keterangan/jenis/nama/lokasi
+   * belum lengkap. Tiket P1 baru dibuat setelah semuanya terisi (anti-iseng).
+   */
+  intent?: "report" | "emergency" | "emergency_draft" | "rename";
   category?: Category;
   description?: string;
   address?: string;
@@ -86,6 +90,12 @@ interface ConversationContext {
   mediaIds?: string[];
   /** Teks berkata kunci darurat yang menunggu konfirmasi YA/TIDAK. */
   pendingText?: string;
+  /** Nama sudah dijawab dalam sesi darurat ini (objek reporter di memori masih lama). */
+  nameDone?: boolean;
+  /** Kronologi darurat dikirim sebagai voice note. */
+  voiceDesc?: boolean;
+  /** Wilayah terdekat bila lokasi darurat di luar wilkum. */
+  nearestRegionId?: string | null;
 }
 
 const ACTIVE_STATUSES: TicketStatus[] = ["baru", "diterima", "otw", "ditkp", "ditunda"];
@@ -99,6 +109,21 @@ function phoneFromJid(jid: string): string {
 
 function reply(targetJid: string, text: string): OutboxDraft {
   return { targetJid, kind: "text", payload: { text } };
+}
+
+function urcMaps(lat: number | null | undefined, lng: number | null | undefined): string {
+  return lat !== null && lat !== undefined && lng !== null && lng !== undefined
+    ? `https://maps.google.com/?q=${lat},${lng}`
+    : "-";
+}
+
+/** Teks yang berisi link (mis. link Google Maps) — dipakai sebagai lokasi, bukan nama. */
+function looksLikeLink(text: string): boolean {
+  return /(https?:\/\/|www\.|maps\.app\.goo\.gl|goo\.gl\/|maps\.google)/i.test(text);
+}
+
+function locationPrompt(): string {
+  return "Kirim lokasi kejadian (share location), link Google Maps, atau ketik alamat lengkap/nama desa. Lokasi WAJIB diisi.";
 }
 
 function groupMediaDrafts(
@@ -131,6 +156,80 @@ function groupMediaDrafts(
       }
     };
   });
+}
+
+/**
+ * Kirim tiket ke grup URC. Dipanggil saat piket pertama kali menerima laporan
+ * (baru -> diterima), BUKAN saat laporan masuk, supaya URC hanya menerima
+ * laporan yang sudah diverifikasi piket.
+ */
+export function dispatchTicketToUrc(
+  app: FastifyInstance,
+  ticketId: string,
+  acceptedByName?: string | null
+): number {
+  const settings = readSettings(app.db, app.config);
+  if (!settings.waGroupUrcJid) return 0;
+  const ticket = app.db.select().from(tickets).where(eq(tickets.id, ticketId)).get();
+  if (!ticket) return 0;
+  const reporter = app.db.select().from(reporters).where(eq(reporters.id, ticket.reporterId)).get();
+  const phoneDisplay = reporter
+    ? reporterPhoneDisplay(reporter, app.config.SIGAP_PHONE_KEY, settings.piiMasking)
+    : "••••";
+  const regionName = ticket.regionId
+    ? (app.db.select().from(regions).where(eq(regions.id, ticket.regionId)).get()?.name ?? null)
+    : null;
+  const category = CATEGORY_META[ticket.category as Category]?.short ?? ticket.category;
+  const short = ticket.ticketNo.split("-").at(-1) ?? ticket.ticketNo;
+  const lokasi = [
+    ticket.address,
+    regionName && regionName !== ticket.address ? `Desa/Kel. ${regionName}` : null
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const peta =
+    ticket.lat !== null
+      ? urcMaps(ticket.lat, ticket.lng)
+      : ticket.address && looksLikeLink(ticket.address)
+        ? ticket.address
+        : "-";
+  const text = [
+    `${ticket.priority === "P1" ? "🚨 " : ""}*${ticket.priority} · ${category}*`,
+    `#${ticket.ticketNo} — ${ticket.title}`,
+    ticket.description && ticket.description !== ticket.title
+      ? `Kronologi: ${ticket.description.slice(0, 700)}`
+      : null,
+    `Pelapor: ${reporter?.name ?? "Belum diisi"} (${phoneDisplay})`,
+    reporter && reporter.falseCount > 0
+      ? `⚠️ Riwayat pelapor: ${reporter.falseCount} laporan palsu dari ${reporter.reportCount} laporan`
+      : null,
+    `Lokasi: ${lokasi || "Belum dikirim pelapor"}${ticket.locationStatus === "outside" ? " (⚠️ di luar wilkum)" : ""}`,
+    `Peta: ${peta}`,
+    `Masuk: ${formatLocalTime(ticket.createdAt, settings.unitTimezone)}`,
+    acceptedByName ? `Diterima piket: ${acceptedByName}` : null,
+    `Aksi: /otw ${short} | /tiba ${short} | /selesai ${short}`
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const drafts = [
+    reply(settings.waGroupUrcJid, text),
+    ...groupMediaDrafts(app, ticket.id, ticket.ticketNo, settings.waGroupUrcJid)
+  ];
+  for (const draft of drafts) enqueueOutbox(app.db, draft);
+  app.db
+    .insert(ticketEvents)
+    .values({
+      id: randomUUID(),
+      ticketId: ticket.id,
+      actorType: "system",
+      actorId: null,
+      fromStatus: ticket.status,
+      toStatus: ticket.status,
+      note: "Diteruskan ke grup URC setelah diterima piket",
+      createdAt: new Date().toISOString()
+    })
+    .run();
+  return drafts.length;
 }
 
 function parseContext(value: string): ConversationContext {
@@ -185,11 +284,19 @@ function isExplicitEmergency(text: string): boolean {
 }
 
 function inferCategory(text: string): Category {
-  if (/\b(TAWURAN|KAMTIBMAS|KERIBUTAN|PREMAN)\b/i.test(text)) return "tawuran";
-  if (/\b(CURANMOR|MALING|BEGAL|RAMPOK|PENCURIAN|PIDANA)\b/i.test(text)) return "pidana";
+  if (/\b(TAWURAN|KAMTIBMAS|KERIBUTAN|PREMAN|KEROYOK|DIKEROYOK|PENGEROYOKAN|RIBUT|BENTROK)\b/i.test(text)) {
+    return "tawuran";
+  }
+  if (
+    /\b(CURANMOR|MALING|BEGAL|RAMPOK|PENCURIAN|PIDANA|DIBACOK|BACOK|PENGANIAYAAN|DIANIAYA|PENUSUKAN|DITUSUK|JAMBRET|DIJAMBRET|PERAMPOKAN|DIRAMPOK|PENCULIKAN)\b/i.test(
+      text
+    )
+  ) {
+    return "pidana";
+  }
   if (/\b(BANJIR|POHON|LONGSOR|GEMPA|BENCANA)\b/i.test(text)) return "bencana";
   if (/\b(LAKA|KECELAKAAN|MACET|MOGOK)\b/i.test(text)) return "laka";
-  if (/\b(KEBAKARAN|API)\b/i.test(text)) return "kebakaran";
+  if (/\b(KEBAKARAN|TERBAKAR|DIBAKAR|API)\b/i.test(text)) return "kebakaran";
   return "lain";
 }
 
@@ -220,7 +327,7 @@ function welcomeText(name: string | null): string {
   return [
     name ? `Halo ${name}.` : "Selamat datang di layanan laporan Polsek.",
     "Ketik LAPOR untuk mulai membuat laporan.",
-    "Untuk darurat, ketik DARURAT atau kirim lokasi kejadian.",
+    "Untuk darurat, ketik DARURAT lalu sebutkan kejadiannya.",
     "Data Anda diproses hanya untuk penanganan laporan. Dengan melanjutkan, Anda menyetujui pemrosesan tersebut.",
     "Ketik BANTU untuk bantuan."
   ].join("\n");
@@ -230,7 +337,7 @@ function helpText(): string {
   return [
     "Panduan singkat:",
     "- LAPOR: mulai laporan baru",
-    "- DARURAT: laporan prioritas 1 (langsung diteruskan)",
+    "- DARURAT <kejadian>: laporan prioritas 1, sebutkan kejadiannya (contoh: DARURAT ada tawuran di pasar)",
     "- STATUS: cek tiket terakhir",
     "- STATUS BKS-...: cek tiket tertentu",
     "- NAMA: ubah nama pelapor",
@@ -423,8 +530,9 @@ function createTicket(
   const priority = options.priority ?? (options.emergency ? "P1" : categoryMeta.defaultPriority);
   const description =
     context.description?.trim() || (options.emergency ? "Laporan darurat tanpa deskripsi." : "");
+  const emergencyGist = options.emergency ? emergencyDetail(description).slice(0, 90) : "";
   const title = options.emergency
-    ? `Laporan darurat — ${categoryMeta.short}`
+    ? `DARURAT ${categoryMeta.short}${emergencyGist ? `: ${emergencyGist}` : ""}`
     : description.slice(0, 120) || `Laporan ${categoryMeta.short}`;
   const ticketId = randomUUID();
   const ticketNo = nextTicketNumber(app.db, app.config, app.sqlite);
@@ -505,12 +613,6 @@ function createTicket(
     userAgent: null
   });
 
-  const phoneDisplay = reporterPhoneDisplay(
-    reporter,
-    app.config.SIGAP_PHONE_KEY,
-    settings.piiMasking
-  );
-
   const drafts: OutboxDraft[] = [
     reply(
       input.chatJid,
@@ -523,31 +625,8 @@ function createTicket(
     )
   ];
 
-  if (settings.waGroupUrcJid) {
-    const maps =
-      context.lat !== undefined && context.lng !== undefined
-        ? `https://maps.google.com/?q=${context.lat},${context.lng}`
-        : "-";
-    const short = ticketNo.split("-").at(-1) ?? ticketNo;
-    const regionName = context.regionId
-      ? app.db.select().from(regions).where(eq(regions.id, context.regionId)).get()?.name
-      : null;
-    drafts.push(
-      reply(
-        settings.waGroupUrcJid,
-        [
-          `${priority === "P1" ? "🚨 " : ""}*${priority} · ${categoryMeta.short}*`,
-          `#${ticketNo} — ${title}`,
-          `Pelapor: ${reporter.name} (${phoneDisplay})`,
-          `Lokasi: ${context.address ?? regionName ?? "Belum diverifikasi"}`,
-          `Peta: ${maps}`,
-          `Waktu: ${formatLocalTime(now, settings.unitTimezone)}`,
-          `Aksi: /otw ${short} | /tiba ${short} | /selesai ${short}`
-        ].join("\n")
-      )
-    );
-    drafts.push(...groupMediaDrafts(app, ticketId, ticketNo, settings.waGroupUrcJid));
-  }
+  // Grup URC TIDAK dikabari di sini; tiket diteruskan setelah piket menerima
+  // laporan (lihat dispatchTicketToUrc di routes/tickets.ts).
 
   const afterCommit = () => {
     app.bus.broadcast("ticket.updated", {
@@ -607,6 +686,30 @@ function updateTicketLocation(
       createdAt: now
     })
     .run();
+  const settings = readSettings(app.db, app.config);
+  const ticket = app.db.select().from(tickets).where(eq(tickets.id, ticketId)).get();
+  if (settings.waGroupUrcJid && ticket?.ackAt) {
+    const regionName = ticket.regionId
+      ? (app.db.select().from(regions).where(eq(regions.id, ticket.regionId)).get()?.name ?? null)
+      : null;
+    const peta =
+      ticket.lat !== null
+        ? urcMaps(ticket.lat, ticket.lng)
+        : ticket.address && looksLikeLink(ticket.address)
+          ? ticket.address
+          : "-";
+    enqueueOutbox(
+      app.db,
+      reply(
+        settings.waGroupUrcJid,
+        [
+          `📍 Update lokasi #${ticket.ticketNo}`,
+          `Lokasi: ${[ticket.address, regionName ? `Desa/Kel. ${regionName}` : null].filter(Boolean).join(" · ") || "-"}`,
+          `Peta: ${peta}`
+        ].join("\n")
+      )
+    );
+  }
 }
 
 /**
@@ -651,7 +754,7 @@ function markOutsideEmergencyTicket(
     })
     .run();
   const settings = readSettings(app.db, app.config);
-  if (settings.waGroupUrcJid) {
+  if (settings.waGroupUrcJid && ticket.ackAt) {
     const maps =
       context.lat !== undefined && context.lng !== undefined
         ? `https://maps.google.com/?q=${context.lat},${context.lng}`
@@ -690,6 +793,57 @@ function outsideEmergencyReply(
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** Kata pengisi yang tidak dihitung sebagai keterangan darurat. */
+const EMERGENCY_FILLER =
+  /\b(DARURAT|DARURATT+|TOLONG|TOLONGIN|SEGERA|CEPAT|URGENT|HELP|PAK|BU|BAPAK|POLISI|POLSEK|LAPOR|LAPORAN|TES|TEST|TESTING|COBA|ISENG|HALO|HAI|P|MIN|ADMIN)\b/gi;
+
+function emergencyDetail(text: string): string {
+  return text
+    .replace(EMERGENCY_FILLER, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Keterangan darurat dianggap cukup bila, setelah kata pengisi dibuang,
+ * masih ada minimal 2 kata berbeda dan 8 huruf. "DARURAT" saja atau
+ * "test test" tidak lolos, jadi tidak membuat tiket P1.
+ */
+function isMeaningfulEmergency(text: string): boolean {
+  const detail = emergencyDetail(text);
+  const words = new Set(
+    detail
+      .toLowerCase()
+      .split(" ")
+      .filter((word) => word.length >= 2)
+  );
+  return detail.replace(/\s/g, "").length >= 8 && words.size >= 2;
+}
+
+function emergencyDescPrompt(): string {
+  return [
+    "Darurat apa yang sedang terjadi?",
+    "Ceritakan singkat: kejadiannya apa, ada korban/pelaku/senjata?",
+    'Contoh: "Ada begal bawa celurit, korban luka di depan Indomaret Kosambi".',
+    "Boleh juga kirim voice note.",
+    "⚠️ Laporan palsu/iseng akan ditolak, dicatat, dan nomor bisa diblokir."
+  ].join("\n");
+}
+
+function emergencyCategoryMenu(): string {
+  return [
+    "Jenis kejadian darurat:",
+    "1. Tawuran / keributan / pengeroyokan",
+    "2. Kejahatan (begal, rampok, pencurian, penganiayaan)",
+    "3. Bencana (banjir, pohon tumbang, longsor)",
+    "4. Kecelakaan lalu lintas",
+    "5. Kebakaran",
+    "6. Lainnya",
+    "Balas dengan angka."
+  ].join("\n");
 }
 
 function emergencyConfirmText(): string {
@@ -815,6 +969,131 @@ function handleInboundCore(
         }
       : undefined;
 
+  /**
+   * Alur DARURAT anti-iseng: tiket P1 baru dibuat setelah keterangan kejadian,
+   * jenis, nama, dan lokasi terisi. Setiap pemanggilan meminta bagian yang
+   * masih kurang, atau membuat tiket bila sudah lengkap.
+   */
+  const advanceEmergency = (): ConversationResult => {
+    if (!isMeaningfulEmergency(context.description ?? "") && !context.voiceDesc) {
+      saveConversation(app, conversation.id, "AWAIT_EMERGENCY_DESC", context, reporter.id);
+      replies.push(reply(input.chatJid, emergencyDescPrompt()));
+      return { replies, afterCommit: combineAfterCommit() };
+    }
+    if (!context.category) {
+      saveConversation(app, conversation.id, "AWAIT_EMERGENCY_CATEGORY", context, reporter.id);
+      replies.push(reply(input.chatJid, emergencyCategoryMenu()));
+      return { replies, afterCommit: combineAfterCommit() };
+    }
+    if (reporter.name === "Belum diisi" && !context.nameDone) {
+      saveConversation(app, conversation.id, "AWAIT_NAME", context, reporter.id);
+      replies.push(
+        reply(input.chatJid, "Sebutkan nama lengkap Anda (nama asli) untuk laporan darurat ini.")
+      );
+      return { replies, afterCommit: combineAfterCommit() };
+    }
+    if (context.lat === undefined && !context.address) {
+      saveConversation(app, conversation.id, "AWAIT_LOCATION", context, reporter.id);
+      replies.push(
+        reply(
+          input.chatJid,
+          "Di mana kejadiannya? Lokasi WAJIB: kirim share location, link Google Maps, atau ketik alamat lengkap/nama desa."
+        )
+      );
+      return { replies, afterCommit: combineAfterCommit() };
+    }
+    if (rateLimited(app, reporter.id)) {
+      saveConversation(app, conversation.id, "IDLE", {}, reporter.id);
+      replies.push(
+        reply(
+          input.chatJid,
+          "Anda masih memiliki 3 laporan aktif atau sudah mencapai batas 10 laporan/24 jam. Tunggu laporan sebelumnya ditangani. Untuk darurat nyawa, telepon 110."
+        )
+      );
+      return { replies };
+    }
+    // Lokasi di luar wilkum TIDAK menolak laporan darurat; piket yang memutuskan.
+    const outside = context.locationStatus === "outside";
+    const nearestId = context.nearestRegionId ?? null;
+    context.intent = "emergency";
+    delete context.nameDone;
+    delete context.voiceDesc;
+    delete context.nearestRegionId;
+    const created = createTicket(app, input, reporter, context, {
+      emergency: true,
+      priority: "P1"
+    });
+    afterCommitHooks.push(created.afterCommit);
+    context.emergencyTicketId = created.ticket.id;
+    replies.push(...created.drafts);
+    if (outside) {
+      app.db
+        .insert(ticketEvents)
+        .values({
+          id: randomUUID(),
+          ticketId: created.ticket.id,
+          actorType: "system",
+          actorId: null,
+          fromStatus: "baru",
+          toStatus: "baru",
+          note: "Lokasi yang dikirim pelapor terdeteksi DI LUAR wilkum. Tiket tetap aktif — piket wajib verifikasi lalu putuskan teruskan ke Polsek terdekat atau tolak.",
+          createdAt: new Date().toISOString()
+        })
+        .run();
+      replies.push(reply(input.chatJid, outsideEmergencyReply(app, nearestId, regionList)));
+    }
+    saveConversation(app, conversation.id, "AWAIT_MEDIA", context, reporter.id);
+    replies.push(reply(input.chatJid, "Kirim foto/video kejadian jika ada, atau ketik SELESAI."));
+    return { replies, afterCommit: combineAfterCommit() };
+  };
+
+  const setDraftLocation = (loc: { lat: number; lng: number; accuracyM?: number }): void => {
+    const classification = classifyLocation(loc, regionList);
+    context.lat = loc.lat;
+    context.lng = loc.lng;
+    context.accuracyM = loc.accuracyM;
+    context.regionId = classification.status === "outside" ? null : classification.regionId;
+    context.locationStatus = classification.status;
+    if (classification.status === "outside") {
+      context.nearestRegionId = classification.nearestRegionId;
+    }
+  };
+
+  const startEmergency = (
+    sourceText: string,
+    base: ConversationContext
+  ): ConversationResult => {
+    if (rateLimited(app, reporter.id)) {
+      replies.push(
+        reply(
+          input.chatJid,
+          "Anda masih memiliki 3 laporan aktif atau sudah mencapai batas 10 laporan/24 jam. Tunggu laporan sebelumnya ditangani. Untuk darurat nyawa, telepon 110."
+        )
+      );
+      return { replies };
+    }
+    const description = [base.description, sourceText]
+      .filter((part): part is string => Boolean(part && part.trim()))
+      .join("\n");
+    const inferred = inferCategory(description);
+    context = {
+      ...(base.mediaIds?.length ? { mediaIds: base.mediaIds } : {}),
+      intent: "emergency_draft",
+      category: base.category ?? (inferred !== "lain" ? inferred : undefined),
+      description,
+      address: base.address,
+      lat: base.lat,
+      lng: base.lng,
+      accuracyM: base.accuracyM,
+      regionId: base.regionId ?? null,
+      locationStatus: base.locationStatus ?? "needs_verification",
+      ...(base.nameDone ? { nameDone: true } : {}),
+      ...(base.voiceDesc ? { voiceDesc: true } : {})
+    };
+    if (input.location) setDraftLocation(input.location);
+    return advanceEmergency();
+  };
+
   if (
     reporter.blockedAt &&
     !(upper === "STATUS" || /^STATUS\s+[A-Z0-9-]+$/i.test(text)) &&
@@ -936,11 +1215,12 @@ function handleInboundCore(
       );
       const settings = readSettings(app.db, app.config);
       const emergencyTicket = app.db
-        .select({ ticketNo: tickets.ticketNo })
+        .select({ ticketNo: tickets.ticketNo, ackAt: tickets.ackAt })
         .from(tickets)
         .where(eq(tickets.id, context.emergencyTicketId))
         .get();
-      if (settings.waGroupUrcJid && emergencyTicket) {
+      // Media hanya diteruskan ke grup bila tiket sudah diterima piket.
+      if (settings.waGroupUrcJid && emergencyTicket?.ackAt) {
         replies.push(
           ...groupMediaDrafts(
             app,
@@ -972,6 +1252,11 @@ function handleInboundCore(
       } catch {
         // Ignore malformed EXIF JSON.
       }
+    }
+    if (gps && context.intent === "emergency_draft") {
+      setDraftLocation(gps);
+      replies.push(reply(input.chatJid, "Lokasi dari GPS foto digunakan."));
+      return advanceEmergency();
     }
     if (gps) {
       const classification = classifyLocation({ ...gps }, regionList);
@@ -1010,71 +1295,13 @@ function handleInboundCore(
 
   const explicitEmergency = isExplicitEmergency(text);
   const idleLike = state === "IDLE" || state === "DONE";
+  // Sesi darurat yang sedang dilengkapi (emergency_draft) tidak diulang dari awal
+  // bila warga mengetik "darurat" lagi (mis. nama "Warga Darurat").
   const inReportFlow =
-    !idleLike && state !== "AWAIT_EMERGENCY_CONFIRM" && !context.emergencyTicketId;
-
-  const startEmergency = (
-    sourceText: string,
-    base: ConversationContext
-  ): ConversationResult => {
-    if (rateLimited(app, reporter.id)) {
-      replies.push(
-        reply(
-          input.chatJid,
-          "Anda masih memiliki 3 laporan aktif atau sudah mencapai batas 10 laporan/24 jam. Tunggu laporan sebelumnya ditangani. Untuk darurat nyawa, telepon 110."
-        )
-      );
-      return { replies };
-    }
-    const location = input.location ?? (base.lat !== undefined && base.lng !== undefined
-      ? { lat: base.lat, lng: base.lng, accuracyM: base.accuracyM }
-      : undefined);
-    const classification = location ? classifyLocation(location, regionList) : null;
-    const description = [base.description, sourceText]
-      .filter((part): part is string => Boolean(part && part.trim()))
-      .join("\n");
-    context = {
-      ...(base.mediaIds?.length ? { mediaIds: base.mediaIds } : {}),
-      intent: "emergency",
-      category: base.category ?? inferCategory(description),
-      description: description || "Laporan darurat tanpa deskripsi.",
-      address: base.address,
-      lat: location?.lat,
-      lng: location?.lng,
-      accuracyM: location?.accuracyM,
-      regionId: classification && classification.status !== "outside"
-        ? classification.regionId
-        : base.regionId ?? null,
-      // Lokasi di luar wilkum TIDAK menolak laporan darurat; piket yang memutuskan.
-      locationStatus: classification?.status ?? base.locationStatus ?? "needs_verification"
-    };
-    const created = createTicket(app, input, reporter, context, {
-      emergency: true,
-      priority: "P1"
-    });
-    afterCommitHooks.push(created.afterCommit);
-    context.emergencyTicketId = created.ticket.id;
-    replies.push(...created.drafts);
-    if (classification?.status === "outside") {
-      replies.push(reply(input.chatJid, outsideEmergencyReply(app, classification.nearestRegionId, regionList)));
-    }
-
-    if (reporter.name === "Belum diisi") {
-      saveConversation(app, conversation.id, "AWAIT_NAME", context, reporter.id);
-      replies.push(
-        reply(input.chatJid, "Sebutkan nama lengkap Anda untuk melengkapi laporan darurat.")
-      );
-    } else if (location) {
-      saveConversation(app, conversation.id, "AWAIT_MEDIA", context, reporter.id);
-      replies.push(reply(input.chatJid, "Kirim detail/foto jika ada, atau ketik SELESAI."));
-    } else {
-      saveConversation(app, conversation.id, "AWAIT_LOCATION", context, reporter.id);
-      replies.push(
-        reply(input.chatJid, "Kirim lokasi kejadian (share location) agar tim bisa meluncur.")
-      );
-    }
-    return { replies, afterCommit: combineAfterCommit() };
-  };
+    !idleLike &&
+    state !== "AWAIT_EMERGENCY_CONFIRM" &&
+    !context.emergencyTicketId &&
+    context.intent !== "emergency_draft";
 
   // Kata kunci (BANJIR, LAKA, dst.) dulu langsung membuat P1. Sekarang warga
   // diminta konfirmasi agar pesan biasa tidak memicu alarm & eskalasi palsu.
@@ -1105,7 +1332,7 @@ function handleInboundCore(
       replies.push(
         reply(
           input.chatJid,
-          "Baik, kami catat sebagai laporan biasa. Kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Ketik LEWATI jika belum tahu."
+          "Baik, kami catat sebagai laporan biasa. Kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Lokasi WAJIB diisi."
         )
       );
       return { replies };
@@ -1182,6 +1409,17 @@ function handleInboundCore(
       )
     );
     return { replies };
+  }
+
+  if (
+    input.type === "location" &&
+    input.location &&
+    context.intent === "emergency_draft" &&
+    state !== "IDLE" &&
+    state !== "DONE"
+  ) {
+    setDraftLocation(input.location);
+    return advanceEmergency();
   }
 
   if (input.type === "location" && state === "AWAIT_LOCATION") {
@@ -1269,6 +1507,24 @@ function handleInboundCore(
     }
 
     case "AWAIT_NAME": {
+      // Warga sering mengirim link lokasi saat ditanya nama. Link dipakai
+      // sebagai lokasi, bukan disimpan sebagai nama pelapor.
+      if (looksLikeLink(text)) {
+        if (context.intent !== "rename" && context.lat === undefined && !context.address) {
+          context.address = text.slice(0, 500);
+          context.locationStatus = "needs_verification";
+          if (context.emergencyTicketId) {
+            updateTicketLocation(app, context.emergencyTicketId, context);
+          }
+          saveConversation(app, conversation.id, "AWAIT_NAME", context, reporter.id);
+          replies.push(
+            reply(input.chatJid, "Link lokasi dicatat. Sekarang ketik nama lengkap Anda (bukan link).")
+          );
+          return { replies };
+        }
+        replies.push(reply(input.chatJid, "Itu terlihat seperti link, bukan nama. Ketik nama lengkap Anda."));
+        return { replies };
+      }
       if (text.length < 3 || /^\d+$/.test(text)) {
         replies.push(reply(input.chatJid, "Nama minimal 3 karakter. Siapa nama lengkap Anda?"));
         return { replies };
@@ -1279,14 +1535,21 @@ function handleInboundCore(
         saveConversation(app, conversation.id, "IDLE", {}, reporter.id);
         return { replies };
       }
+      if (context.intent === "emergency_draft") {
+        context.nameDone = true;
+        return advanceEmergency();
+      }
       if (context.intent === "emergency") {
-        if (context.lat !== undefined) {
+        if (context.lat !== undefined || context.address) {
           saveConversation(app, conversation.id, "AWAIT_MEDIA", context, reporter.id);
           replies.push(reply(input.chatJid, "Kirim detail/foto jika ada, atau ketik SELESAI."));
         } else {
           saveConversation(app, conversation.id, "AWAIT_LOCATION", context, reporter.id);
           replies.push(
-            reply(input.chatJid, "Kirim lokasi kejadian (share location) agar tim bisa meluncur.")
+            reply(
+              input.chatJid,
+              "Lokasi kejadian WAJIB diisi agar tim bisa meluncur: kirim share location, link Google Maps, atau ketik alamat lengkap/nama desa."
+            )
           );
         }
         return { replies };
@@ -1294,14 +1557,15 @@ function handleInboundCore(
       // Laporan biasa yang kategori/deskripsinya sudah terisi (mis. dari
       // konfirmasi "bukan darurat") langsung lanjut ke tahap berikutnya.
       if (context.category && context.description) {
-        const nextState = context.lat !== undefined ? "AWAIT_MEDIA" : "AWAIT_LOCATION";
+        const nextState =
+          context.lat !== undefined || context.address ? "AWAIT_MEDIA" : "AWAIT_LOCATION";
         saveConversation(app, conversation.id, nextState, context, reporter.id);
         replies.push(
           reply(
             input.chatJid,
             nextState === "AWAIT_MEDIA"
               ? "Kirim foto/video atau ketik SELESAI."
-              : "Kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Ketik LEWATI jika belum tahu."
+              : "Kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Lokasi WAJIB diisi."
           )
         );
         return { replies };
@@ -1309,6 +1573,39 @@ function handleInboundCore(
       saveConversation(app, conversation.id, "AWAIT_CATEGORY", context, reporter.id);
       replies.push(reply(input.chatJid, categoryMenu()));
       return { replies };
+    }
+
+    case "AWAIT_EMERGENCY_DESC": {
+      if (input.type === "audio" && input.mediaIds?.length) {
+        context.voiceDesc = true;
+        context.description = [context.description, "(Kronologi via voice note)"]
+          .filter(Boolean)
+          .join("\n");
+        return advanceEmergency();
+      }
+      if (isMeaningfulEmergency(text)) {
+        context.description = [context.description, text]
+          .filter((part): part is string => Boolean(part && part.trim()))
+          .join("\n")
+          .slice(0, 4000);
+        if (!context.category) {
+          const inferred = inferCategory(text);
+          if (inferred !== "lain") context.category = inferred;
+        }
+        return advanceEmergency();
+      }
+      replies.push(reply(input.chatJid, `Keterangan belum jelas. ${emergencyDescPrompt()}`));
+      return { replies };
+    }
+
+    case "AWAIT_EMERGENCY_CATEGORY": {
+      const category = parseCategory(text);
+      if (!category) {
+        replies.push(reply(input.chatJid, emergencyCategoryMenu()));
+        return { replies };
+      }
+      context.category = category;
+      return advanceEmergency();
     }
 
     case "AWAIT_CATEGORY": {
@@ -1321,7 +1618,7 @@ function handleInboundCore(
       if (context.description && context.description.length >= 3) {
         // Deskripsi sudah ada (pesan awal "bukan darurat" atau "Ubah kategori"
         // dari ringkasan): jangan minta ulang.
-        if (context.lat !== undefined || context.address || context.locationStatus) {
+        if (context.lat !== undefined || context.address) {
           saveConversation(app, conversation.id, "CONFIRM", context, reporter.id);
           replies.push(reply(input.chatJid, confirmText(context, regionList)));
           return { replies };
@@ -1330,7 +1627,7 @@ function handleInboundCore(
         replies.push(
           reply(
             input.chatJid,
-            "Kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Ketik LEWATI jika belum tahu."
+            "Kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Lokasi WAJIB diisi."
           )
         );
         return { replies };
@@ -1357,8 +1654,8 @@ function handleInboundCore(
         replies.push(reply(input.chatJid, "Deskripsi terlalu pendek. Ceritakan minimal 3 karakter."));
         return { replies };
       }
-      if (context.lat !== undefined) {
-        // Lokasi sudah dikirim di awal (share location); jangan ditanya lagi.
+      if (context.lat !== undefined || context.address) {
+        // Lokasi sudah dikirim di awal (share location/link); jangan ditanya lagi.
         saveConversation(app, conversation.id, "AWAIT_MEDIA", context, reporter.id);
         replies.push(
           reply(input.chatJid, "Lokasi sudah tersimpan. Kirim foto/video atau ketik SELESAI.")
@@ -1369,20 +1666,26 @@ function handleInboundCore(
       replies.push(
         reply(
           input.chatJid,
-          "Sekarang kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Ketik LEWATI jika belum tahu."
+          "Sekarang kirim lokasi kejadian (share location), atau ketik alamat/kelurahan. Lokasi WAJIB diisi."
         )
       );
       return { replies };
     }
 
     case "AWAIT_LOCATION": {
-      if (upper === "LEWATI") {
-        context.locationStatus = "needs_verification";
-        saveConversation(app, conversation.id, "AWAIT_MEDIA", context, reporter.id);
+      // Lokasi wajib untuk semua laporan (biasa maupun darurat).
+      if (upper === "LEWATI" || upper === "SELESAI") {
         replies.push(
-          reply(input.chatJid, "Lokasi ditandai perlu verifikasi. Kirim foto/video atau ketik SELESAI.")
+          reply(input.chatJid, `Laporan tidak bisa diproses tanpa lokasi. ${locationPrompt()}`)
         );
-        return { replies };
+        return { replies, afterCommit: combineAfterCommit() };
+      }
+      if (text.length >= 3 && context.intent === "emergency_draft") {
+        const region = findRegionByName(regionList, text);
+        context.address = text.slice(0, 500);
+        context.regionId = region?.id ?? null;
+        context.locationStatus = "needs_verification";
+        return advanceEmergency();
       }
       if (text.length >= 3) {
         const region = findRegionByName(regionList, text);
@@ -1399,8 +1702,8 @@ function handleInboundCore(
         );
         return { replies };
       }
-      replies.push(reply(input.chatJid, "Kirim lokasi (share location) atau ketik alamat/kelurahan."));
-      return { replies };
+      replies.push(reply(input.chatJid, locationPrompt()));
+      return { replies, afterCommit: combineAfterCommit() };
     }
 
     case "AWAIT_MEDIA": {
@@ -1426,12 +1729,17 @@ function handleInboundCore(
         return { replies, afterCommit: combineAfterCommit() };
       }
       if (["SELESAI", "KIRIM", "1"].includes(upper)) {
+        if (context.lat === undefined && !context.address) {
+          saveConversation(app, conversation.id, "AWAIT_LOCATION", context, reporter.id);
+          replies.push(reply(input.chatJid, `Lokasi kejadian belum ada. ${locationPrompt()}`));
+          return { replies, afterCommit: combineAfterCommit() };
+        }
         if (context.emergencyTicketId) {
           saveConversation(app, conversation.id, "DONE", {}, reporter.id);
           replies.push(
             reply(
               input.chatJid,
-              "Laporan darurat Anda sudah diteruskan ke piket dan URC. Balas STATUS untuk cek status."
+              "Laporan darurat Anda sudah diteruskan ke piket. Setelah diterima piket, tim URC akan meluncur. Balas STATUS untuk cek status."
             )
           );
         } else {
@@ -1511,6 +1819,11 @@ function handleInboundCore(
 
     case "CONFIRM": {
       if (["1", "KIRIM", "YA"].includes(upper)) {
+        if (context.lat === undefined && !context.address) {
+          saveConversation(app, conversation.id, "AWAIT_LOCATION", context, reporter.id);
+          replies.push(reply(input.chatJid, `Lokasi kejadian belum ada. ${locationPrompt()}`));
+          return { replies };
+        }
         if (rateLimited(app, reporter.id)) {
           saveConversation(app, conversation.id, "IDLE", {}, reporter.id);
           replies.push(
@@ -1765,7 +2078,7 @@ export function handleGroupCommand(
   });
 
   const replies: OutboxDraft[] = [
-    reply(input.groupJid, groupStatusMessage(ticket.ticketNo, to, note, attachedMedia))
+    reply(input.groupJid, groupStatusMessage(ticket.ticketNo, to, note, attachedMedia, officer.name))
   ];
 
   if (!ticket.isDemo) {
@@ -1778,7 +2091,7 @@ export function handleGroupCommand(
       ? resolveReporterJid(reporter, app.config.SIGAP_PHONE_KEY)
       : null;
     if (targetJid) {
-      replies.push(reply(targetJid, reporterStatusMessage(ticket.ticketNo, to, note)));
+      replies.push(reply(targetJid, reporterStatusMessage(ticket.ticketNo, to, note, officer.name)));
     }
   }
 
