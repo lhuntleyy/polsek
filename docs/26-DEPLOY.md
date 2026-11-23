@@ -272,7 +272,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://sigap.polsek-contoh.go.id/inter
 2. Di produksi, admin awal **wajib mengganti password** di layar pertama (password di `api.env` dibaca banyak orang saat deploy). Seed tidak pernah menimpa admin yang sudah ada, jadi nilai di `api.env` setelah ini tidak berlaku lagi.
 3. Aktifkan **TOTP** di **Sistem → Keamanan akun** (wajib untuk admin, pawas, kapolsek). Password juga bisa diganti kapan saja dari kartu **Ganti password** di menu yang sama.
 4. Isi **Sistem → Identitas unit**, **SLA**, **DPO**, **Retensi**.
-5. Unggah polygon wilayah kelurahan (GeoJSON) di **Sistem → Wilayah**.
+5. Impor polygon wilayah: untuk Polsek Teluknaga jalankan `sudo bash /opt/sigap/deploy/import-wilkum.sh` (22 desa/kelurahan dari OSM, lihat [`wilkum/README.md`](wilkum/README.md)). Polygon satu per satu juga bisa diunggah di **Sistem → Wilayah**.
 6. Tambah petugas di **Sistem → Petugas**:
    - Password awal min. 10 karakter (huruf + angka). **Petugas wajib mengganti password saat login pertama**; admin tidak akan tahu password akhir mereka.
    - Akun **Bhabinkamtibmas wajib** dipilihkan wilayah.
@@ -410,7 +410,7 @@ Lakukan bila secret pernah bocor, saat serah terima pengelola, atau bila environ
 
 ```bash
 sudo systemctl stop sigap-bot sigap-api
-sudo -u sigap -H bash -c 'cd /opt/sigap/apps/api && set -a && . /etc/sigap/api.env && set +a && pnpm secrets:rotate -- --write-env /etc/sigap/api.env'
+sudo -u sigap -H bash -c 'cd /opt/sigap/apps/api && set -a && . /etc/sigap/api.env && set +a && node dist/rotate-secrets.js --write-env /etc/sigap/api.env'
 # Salin SIGAP_INTERNAL_TOKEN baru ke /etc/sigap/bot.env
 sudo systemctl start sigap-api sigap-bot
 ```

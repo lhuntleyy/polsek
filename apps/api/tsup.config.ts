@@ -1,7 +1,12 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/server.ts"],
+  // CLI ikut dibundel agar bisa dijalankan di server produksi tanpa tsx.
+  entry: {
+    server: "src/server.ts",
+    "import-regions": "src/cli/import-regions.ts",
+    "rotate-secrets": "src/cli/rotate-secrets.ts"
+  },
   format: ["esm"],
   platform: "node",
   target: "node24",

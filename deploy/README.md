@@ -61,7 +61,7 @@ sudo bash deploy/install.sh demo.domainanda.id
 1. Ambil password admin awal: `sudo cat /root/sigap-admin-awal.txt`
 2. Buka `https://demo.domainanda.id`, login `admin`, lalu **ganti password** (wajib di layar pertama). Setelah itu hapus filenya: `sudo rm /root/sigap-admin-awal.txt`.
 3. **Sistem → Identitas unit**: isi nama/kode Polsek demo.
-4. **Sistem → Wilayah**: unggah polygon kelurahan (GeoJSON). Mode production tidak membuat data demo.
+4. **Wilayah**: impor polygon wilkum Teluknaga (22 desa/kelurahan, dari OSM) dengan `sudo bash /opt/sigap/deploy/import-wilkum.sh` (cek dulu dengan `--dry-run`). Mode production tidak membuat data demo, jadi langkah ini wajib. Detail dan batasan akurasi: [`docs/wilkum/README.md`](../docs/wilkum/README.md).
 5. **Sistem → Petugas**: tambah akun (password awal min. 10 karakter; petugas wajib menggantinya).
 6. **Sistem → WhatsApp Gateway → Hubungkan**, lalu scan QR dengan nomor WA demo.
 7. Uji dari HP lain: kirim `LAPOR` ke nomor itu.

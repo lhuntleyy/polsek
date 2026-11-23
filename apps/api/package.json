@@ -9,6 +9,7 @@
     "db:migrate": "tsx src/cli/migrate.ts",
     "db:seed": "tsx src/cli/seed.ts",
     "secrets:rotate": "tsx src/cli/rotate-secrets.ts",
+    "regions:import": "tsx src/cli/import-regions.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsup && node scripts/copy-migrations.mjs"

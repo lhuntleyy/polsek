@@ -58,7 +58,8 @@ const include = [
   "deploy",
   "docs/26-DEPLOY.md",
   "docs/27-AUDIT-LANJUTAN.md",
-  "docs/17-RUNBOOK.md"
+  "docs/17-RUNBOOK.md",
+  "docs/wilkum"
 ];
 for (const item of include) {
   const from = join(root, item);
