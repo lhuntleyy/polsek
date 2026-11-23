@@ -1,0 +1,42 @@
+# Ganti domain sebelum produksi.
+sigap.example.go.id {
+  encode zstd gzip
+
+  # Asset ber-hash boleh immutable; shell HTML/SW tidak boleh.
+  @assets path /assets/*
+  header @assets Cache-Control "public, max-age=31536000, immutable"
+  header /index.html Cache-Control "no-cache"
+  header /sw.js Cache-Control "no-cache"
+
+  # API dan health harus ditangani sebelum fallback SPA.
+  handle /api/* {
+    reverse_proxy 127.0.0.1:4000 {
+      flush_interval -1
+    }
+  }
+
+  handle /health {
+    reverse_proxy 127.0.0.1:4000
+  }
+
+  handle /internal/* {
+    respond 404
+  }
+
+  # Fallback SPA hanya untuk path non-API.
+  handle {
+    root * /opt/sigap/apps/web/dist
+    try_files {path} /index.html
+    file_server
+  }
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "geolocation=(self)"
+    Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'sha256-eH2cYtTanYSokaBjMTgeQV9SbGMRitmgs8WSocJ5ECg='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://tile.openstreetmap.org https://server.arcgisonline.com; connect-src 'self'; media-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+    -Server
+  }
+}

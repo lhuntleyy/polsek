@@ -1,0 +1,62 @@
+# =============================================================
+# SIGAP — .gitignore
+# Prinsip: secret, data warga, sesi WhatsApp, dan hasil build
+# TIDAK PERNAH masuk repo.
+# =============================================================
+
+# --- Dependency & build ---
+node_modules/
+dist/
+coverage/
+release/
+*.tsbuildinfo
+.vite/
+.turbo/
+.cache/
+
+# --- Secret / environment ---
+.env
+.env.*
+!.env.example
+infra/*.env
+!infra/*.env.example
+*.pem
+*.key
+*.p12
+*.age
+sigap-admin-awal.txt
+
+# --- Data runtime (DB, media bukti, sesi WhatsApp, antrean bot) ---
+data/
+**/baileys/
+**/bot-queue/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.bak
+*.pre-rotate-*
+
+# --- Backup lokal ---
+backups/
+*.tar.gz
+*.zip
+
+# --- Log ---
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# --- Editor / OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# --- Tool lokal ---
+.claude/settings.local.json

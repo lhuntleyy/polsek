@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1440" viewBox="0 0 1080 1440">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071018"/>
+      <stop offset="0.55" stop-color="#0c1821"/>
+      <stop offset="1" stop-color="#08131b"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffb020"/>
+      <stop offset="1" stop-color="#ffd36a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1440" fill="url(#bg)"/>
+  <rect x="54" y="54" width="972" height="1332" rx="28" fill="none" stroke="#1d2b36" stroke-width="2"/>
+  <circle cx="900" cy="160" r="220" fill="#ffb020" opacity="0.06"/>
+  <circle cx="140" cy="1260" r="260" fill="#2dd4bf" opacity="0.05"/>
+
+  <g transform="translate(92 100)">
+    <rect width="88" height="88" rx="20" fill="#ffb020" opacity="0.12" stroke="#ffb020" stroke-width="2"/>
+    <path d="M44 16 L70 26 V46 C70 60 58 72 44 78 C30 72 18 60 18 46 V26 Z"
+          fill="none" stroke="#ffb020" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M32 46 L41 55 L58 36" fill="none" stroke="#ffb020" stroke-width="5"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="198" y="140" font-family="Segoe UI, Arial, sans-serif" font-size="52"
+        font-weight="700" letter-spacing="9" fill="#e8eef4">SIGAP</text>
+  <text x="198" y="178" font-family="Segoe UI, Arial, sans-serif" font-size="20"
+        letter-spacing="4" fill="#8496a6">SISTEM INFORMASI GANGGUAN &amp; ADUAN PUBLIK</text>
+
+  <text x="92" y="330" font-family="Segoe UI, Arial, sans-serif" font-size="76"
+        font-weight="800" fill="#ffffff">LAPOR POLISI</text>
+  <text x="92" y="420" font-family="Segoe UI, Arial, sans-serif" font-size="76"
+        font-weight="800" fill="url(#amber)">LEWAT WHATSAPP</text>
+  <text x="92" y="486" font-family="Segoe UI, Arial, sans-serif" font-size="28"
+        fill="#b8c6d3">Tanpa instal aplikasi. Langsung diterima piket Polsek.</text>
+
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <circle cx="122" cy="588" r="24" fill="#ffb020"/>
+    <text x="122" y="597" text-anchor="middle" font-size="24" font-weight="700" fill="#071018">1</text>
+    <text x="168" y="597" font-size="30" fill="#dbe6ef">Scan QR atau simpan nomor WhatsApp Polsek.</text>
+
+    <circle cx="122" cy="672" r="24" fill="#ffb020"/>
+    <text x="122" y="681" text-anchor="middle" font-size="24" font-weight="700" fill="#071018">2</text>
+    <text x="168" y="681" font-size="30" fill="#dbe6ef">Ketik <tspan font-weight="700" fill="#ffd36a">LAPOR</tspan> dan kirim nama lengkap.</text>
+
+    <circle cx="122" cy="756" r="24" fill="#ffb020"/>
+    <text x="122" y="765" text-anchor="middle" font-size="24" font-weight="700" fill="#071018">3</text>
+    <text x="168" y="765" font-size="30" fill="#dbe6ef">Pilih jenis, ceritakan kejadian, kirim lokasi.</text>
+
+    <circle cx="122" cy="840" r="24" fill="#ffb020"/>
+    <text x="122" y="849" text-anchor="middle" font-size="24" font-weight="700" fill="#071018">4</text>
+    <text x="168" y="849" font-size="30" fill="#dbe6ef">Foto/video/voice note opsional. Simpan nomor tiket.</text>
+  </g>
+
+  <rect x="92" y="930" width="896" height="330" rx="24" fill="#ffffff"/>
+  <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAaQAAAGkCAYAAAB+TFE1AAAAAklEQVR4AewaftIAAAtqSURBVO3Boa4oN7YFwJWtA0wN/f8fZ2hqlhdpQMg80H2lzs6dqvrjz78EAP5hFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAZ+8tKYK/wz7tnpbsyV39E9O18Zc6Wze3a6G3OFf8Y9O09VAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGvjJx+7Z4T/GXPnKmCtfumfndzTmSmf37Lwx5gp/u2eH/xhz5SsVAGigAgANVACggQoANFABgAYqANBABQAaqABAAxUAaKACAA1UAKCBCgA08JN/gTFXurtnp7N7dt4Yc+WNMVeeumfnK2OufOWenTfGXHlqzJU37tl5asyVL92z09mYK93ds9NZBQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIGfwL/cmCudjbnyxj07T4258saYK1+5Zwf+mwoANFABgAYqANBABQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABr4Cf8Txlz50j07T4258pV7dt4Yc+Wpe3a6u2fnK2OuvHHPDr+3CgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAM/+Re4Z4dfc8/OG2OufOWena+MufLGPTu/ozFX+DX37PBrKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAYqANBABQAaqABAAxUAaOAnHxtzhe+NufLGPTtvjLny1D07b4y58tQ9O2+MufLUPTtvjLny1D07b4y58tQ9O2+MudLdmCt8rwIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAYqANDAH3/+JfD/GHOFX3PPzhtjrvyO7tmB/6YCAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAG/vjzL3lhzJU37tl5asyVN+7ZeWrMlTfu2XlqzJU37tnpbsyVr9yz85UxVzq7Z+eNMVeeumfnjTFX3rhnp7MxV964Z+crY648dc/OVyoA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGigAgAN/OSle3Z+R/fsfOWena+MufLGPTtfuWeHv92z09mYK2/cs/PGmCtfuWfnqXt23hhz5al7dt64Z+epMVfeuGfnqQoANFABgAYqANBABQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADP/nYmCtP3bPzlTFX3rhn56kxV75yz86X7tl5asyV7u7Z+cqYK0/ds/OVe3beGHOluzFXvnLPzlNjrvyOKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAYqANBABQAaqABAAxUAaOAnL4250t2YK18Zc+Wpe3a+MubKG/fsvDHmylP37PyOxlx5456dp8Zc+cqYK2/cs/M7GnPlK/fsvDHmylP37HylAgANVACggQoANFABgAYqANBABQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0MAff/4lzY25wq+5Z+eNMVe+cs8Ofxtz5al7drobc+WNe3aeGnPljXt2vjLmylP37Lwx5spX7tl5qgIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAZ+8rExV566Z+eNMVeeumeHX3fPzlNjrnR3z85TY668cc/OV8Zc+co9O2+MucKvuWfnqTFXvlIBgAYqANBABQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBo4Ccvjbnyxj07v6MxV75yz85TY650d8/OG2OuPHXPzhtjrnxlzJWv3LPzlTFXvnLPDn8bc6WzCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGvjJx8Zceeqene7u2fnKmCtP3bPzxpgr3d2z89SYK/yaMVfeuGfnK2OuvHHPzlNjrvyO7tn5SgUAGqgAQAMVAGigAgANVACggQoANFABgAYqANBABQAaqABAAxUAaKACAA1UAKCBP/78Sz405srv6J6dp8Zc+co9O92NufLGPTtfGXPlqXt2uhtz5al7dt4Yc+WNe3aeGnPljXt2vjLmylP37Lwx5spX7tl5qgIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAZ+8i9wz84bY648dc/OV+7Z+cqYK/wzxlz5yj07Xxlz5Y17dr5yz84bY648dc/OV8ZceeOenafGXPlKBQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIGfvDTmyhv37Dw15kp3Y6585Z6dr9yz88aYK18Zc+Ur9+w8NebKG/fsfOWena+MufLGPTtPjbnylTFX3rhn5ytjrnRWAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAYqANBABQAaqABAAz956Z6dN8Zceeqena+MufLGPTv8e9yz85V7dr4y5kp39+y8MebKU/fsvDHmylP37Lwx5spT9+x85Z6dr1QAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAYqANBABQAa+OPPv+SFMVfeuGfnqTFXurtn56kxV75yz84bY678ju7Z4W9jrjx1z84bY67wt3t2+I8KADRQAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAYqANBABQAaqABAA3/8+Zfw2xtzpbt7dr4y5sob9+w8NebKG/fsdDbmypfu2elszJU37tl5asyV7u7ZeaoCAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAGfvLSmCv8M+7ZeeqenTfGXOluzJWn7tl5Y8yVp+7ZeWPMla/cs/PUPTtvjLnylTFX3rhn5ytjrjx1z84bY650VgGABioA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGjgJx+7Z4f/GHOFX3fPzlNjrnxlzJXuxlz5Hd2zw79HBQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADfzkX2DMle7u2elszJU37tl5Y8yVp8Zc+co9O2+MufLUPTv8bcyVN8Zc+R3ds9PZPTtfqQBAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIEKADTwE/4n3LPzxpgr/JoxV/jbPTtvjLny1D07b4y50tmYK7+jCgA0UAGABioA0EAFABqoAEADFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGvgJ/xPGXHnjnp3f0ZgrX7ln540xV35HY67wtzFXnrpn5ytjrrxxz85TFQBooAIADVQAoIEKADRQAYAGKgDQQAUAGqgAQAMVAGigAgANVACggQoANFABgAZ+8i9wzw6/5p6dL4250tk9O2+MufLUmCtv3LPz1JgrX7ln540xV7q7Z+epMVfeuGfnK2OuPHXPzlcqANBABQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBo4I8//5IXxlzhn3HPzlNjrrxxz84bY6585Z4dfs2YK93ds/OVMVc6u2fnjTFXvnLPzlMVAGigAgANVACggQoANFABgAYqANBABQAaqABAAxUAaKACAA1UAKCBCgA0UAGABv748y8BgH9YBQAaqABAAxUAaKACAA1UAKCBCgA0UAGABioA0EAFABqoAEADFQBooAIADfwfz2NQYA4/52IAAAAASUVORK5CYII=" x="128" y="966" width="258" height="258"/>
+  <text x="420" y="1010" font-family="Segoe UI, Arial, sans-serif" font-size="30"
+        font-weight="700" fill="#071018">Scan untuk mulai lapor</text>
+  <text x="420" y="1062" font-family="Segoe UI, Arial, sans-serif" font-size="22"
+        fill="#41525f">atau simpan nomor:</text>
+  <text x="420" y="1122" font-family="Consolas, monospace" font-size="40"
+        font-weight="700" fill="#0b6f66">+62 800-0000-000</text>
+  <text x="420" y="1180" font-family="Segoe UI, Arial, sans-serif" font-size="19"
+        fill="#6b7c89">Klik: wa.me/628000000000?text=LAPOR</text>
+  <text x="420" y="1218" font-family="Segoe UI, Arial, sans-serif" font-size="18"
+        fill="#6b7c89">TEMPLATE: ganti SIGAP_WA_NUMBER sebelum cetak.</text>
+
+  <rect x="92" y="1300" width="896" height="1" fill="#1d2b36"/>
+  <text x="92" y="1350" font-family="Segoe UI, Arial, sans-serif" font-size="21"
+        fill="#8496a6">Darurat nyawa: telepon <tspan font-weight="700" fill="#ff5a5f">110</tspan> atau 112.</text>
+  <text x="92" y="1388" font-family="Segoe UI, Arial, sans-serif" font-size="18"
+        fill="#5d7080">Data pelapor hanya dipakai untuk penanganan laporan. Nomor dimasker di dashboard.</text>
+  <text x="988" y="1388" text-anchor="end" font-family="Consolas, monospace" font-size="16"
+        fill="#5d7080">SIGAP · v1</text>
+</svg>

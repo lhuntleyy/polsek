@@ -1,0 +1,9 @@
+[Unit]
+Description=SIGAP nightly database backup
+
+[Service]
+Type=oneshot
+User=sigap
+Group=sigap
+EnvironmentFile=/etc/sigap/api.env
+ExecStart=/opt/sigap/infra/scripts/backup-db.sh

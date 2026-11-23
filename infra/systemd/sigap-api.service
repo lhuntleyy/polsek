@@ -1,0 +1,26 @@
+[Unit]
+Description=SIGAP API
+After=network-online.target
+Wants=network-online.target
+OnFailure=sigap-alert@%n.service
+
+[Service]
+Type=simple
+User=sigap
+Group=sigap
+UMask=0077
+WorkingDirectory=/opt/sigap/apps/api
+EnvironmentFile=/etc/sigap/api.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/sigap /var/log/sigap
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

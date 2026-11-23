@@ -1,0 +1,36 @@
+[Unit]
+Description=SIGAP WhatsApp Bot (Baileys)
+After=network-online.target sigap-api.service
+Wants=network-online.target
+OnFailure=sigap-alert@%n.service
+
+[Service]
+Type=simple
+# User & env terpisah dari API: bot memproses media dari orang tak dikenal,
+# jadi tidak boleh memegang SESSION_SECRET/PHONE_KEY atau bisa membaca DB.
+User=sigap-bot
+Group=sigap-bot
+UMask=0077
+WorkingDirectory=/opt/sigap/apps/bot
+EnvironmentFile=/etc/sigap/bot.env
+Environment=NODE_ENV=production
+# Sesi WhatsApp di /var/lib/sigap-bot/baileys, antrean pesan masuk di
+# /var/lib/sigap-bot/bot-queue (dibuat otomatis di samping folder sesi).
+Environment=SIGAP_BOT_AUTH_DIR=/var/lib/sigap-bot/baileys
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=5
+# Beri waktu antrean menyelesaikan pengiriman saat stop.
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/sigap-bot /var/log/sigap
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

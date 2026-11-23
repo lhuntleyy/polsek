@@ -1,0 +1,7 @@
+[Unit]
+Description=SIGAP failure alert for %i
+
+[Service]
+Type=oneshot
+ExecStart=/opt/sigap/infra/scripts/alert-failure.sh %i
+EnvironmentFile=-/etc/sigap/api.env
