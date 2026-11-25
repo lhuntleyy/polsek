@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import type { Role, Unit, User, WaGateway } from "../lib/types";
 import type { Theme } from "../lib/theme";
-import { formatWib, formatWibDate, initials } from "../lib/format";
+import { formatWib, initials } from "../lib/format";
 
 export type View = "live" | "map" | "analytics" | "data" | "handover" | "system" | "guide";
 
@@ -51,6 +51,16 @@ const VIEWS: Array<{
   { id: "system", label: "Sistem", title: "Sistem", icon: Settings },
   { id: "guide", label: "Panduan", title: "Panduan Penggunaan", icon: BookOpen }
 ];
+
+const VIEW_SUBTITLE: Record<View, string> = {
+  live: "ini ringkasan piket hari ini.",
+  map: "sebaran laporan di wilayah hukum.",
+  analytics: "tren laporan dan kinerja respons.",
+  data: "data tiket, wilayah, dan registry.",
+  handover: "catatan serah terima antar-shift.",
+  system: "pengaturan unit dan WhatsApp gateway.",
+  guide: "panduan penggunaan SIGAP."
+};
 
 interface ShellProps {
   user: User;
@@ -114,19 +124,24 @@ export function Shell({
         ? "Shift Siang · 14:00–22:00"
         : "Shift Malam · 22:00–06:00";
   const current = VIEWS.find((item) => item.id === view);
+  const visibleViews = VIEWS.filter((item) => !item.roles || item.roles.includes(user.role));
+  const greeting =
+    hour >= 4 && hour < 11
+      ? "Selamat pagi"
+      : hour >= 11 && hour < 15
+        ? "Selamat siang"
+        : hour >= 15 && hour < 18
+          ? "Selamat sore"
+          : "Selamat malam";
+  const dayNumber = new Intl.DateTimeFormat("id-ID", { timeZone: unit.timezone, day: "numeric" }).format(now);
+  const dayName = new Intl.DateTimeFormat("id-ID", { timeZone: unit.timezone, weekday: "short" }).format(now);
+  const monthName = new Intl.DateTimeFormat("id-ID", { timeZone: unit.timezone, month: "long" }).format(now);
 
   return (
     <div className="app">
-      <aside className="rail" aria-label="Navigasi utama">
-        <div className="rail-brand" title="SIGAP">
-          <span className="brand-mark">
-            <ShieldCheck size={22} strokeWidth={1.8} />
-          </span>
-          <span className="brand-name">SIGAP</span>
-        </div>
-
+      <aside className="rail" aria-label="Navigasi utama (mobile)">
         <nav className="rail-nav">
-          {VIEWS.filter((item) => !item.roles || item.roles.includes(user.role)).map((item) => {
+          {visibleViews.map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -146,55 +161,42 @@ export function Shell({
             );
           })}
         </nav>
-
-        <div className="rail-foot">
-          <div className="rail-divider" />
-          <button className="rail-user" type="button" title={`${user.name} · ${user.role}`}>
-            <span className="avatar avatar-sm">{initials(user.name)}</span>
-          </button>
-        </div>
       </aside>
 
       <div className="workspace">
         <header className="topbar">
-          <div className="topbar-title">
-            <div className="eyebrow">
-              {unit.code} · {unit.name}{" "}
-              {env && env !== "production" ? <span className="demo-tag">DEV</span> : null}
-            </div>
-            <div className="title-row">
-              <h1>{current?.title ?? "Live Board"}</h1>
-              <span className="shift-tag">{shift}</span>
-            </div>
+          <div className="topbar-brand" title={`${unit.code} · ${unit.name}`}>
+            <span className="brand-mark">
+              <ShieldCheck size={18} strokeWidth={2} />
+            </span>
+            <span className="brand-text">
+              <b>SIGAP</b>
+              <small>
+                {unit.name}
+                {env && env !== "production" ? <span className="demo-tag">DEV</span> : null}
+              </small>
+            </span>
           </div>
 
-          <label className="topbar-search">
-            <Search size={15} />
-            <input
-              id="global-search"
-              type="search"
-              value={search}
-              onChange={(event) => onSearch(event.target.value)}
-              placeholder="Cari tiket, nama, wilayah..."
-              aria-label="Cari tiket"
-            />
-            <kbd>/</kbd>
-          </label>
+          <nav className="pill-nav" aria-label="Navigasi utama">
+            {visibleViews.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`pill-nav-item ${view === item.id ? "is-active" : ""}`}
+                onClick={() => onView(item.id)}
+                title={item.title}
+                aria-current={view === item.id ? "page" : undefined}
+              >
+                {item.label}
+                {item.id === "live" && activeCount > 0 ? (
+                  <i className="pill-nav-badge">{activeCount}</i>
+                ) : null}
+              </button>
+            ))}
+          </nav>
 
           <div className="topbar-actions">
-            <div className={`gateway-pill ${sseConnected ? "" : "is-off"}`} title="Status stream real-time">
-              <span className="pulse-dot" />
-              <span className="gateway-label">SSE</span>
-              <b>{sseConnected ? "LIVE" : "OFFLINE"}</b>
-            </div>
-            <div
-              className={`gateway-pill is-wa ${waStatus === "connected" ? "" : "is-off"}`}
-              title={`WhatsApp gateway: ${waStatus}`}
-            >
-              <Radio size={12} />
-              <span className="gateway-label">WA</span>
-              <b>{waStatus === "connected" ? "AKTIF" : waStatus === "qr" ? "PAIRING" : "OFFLINE"}</b>
-            </div>
             <button
               className={`icon-btn ${soundEnabled ? "is-active" : ""}`}
               type="button"
@@ -223,18 +225,63 @@ export function Shell({
             >
               {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
             </button>
-            <div className="clock" aria-label="Waktu Indonesia Barat">
-              <b>{formatWib(now, true)}</b>
-              <span>{formatWibDate(now, true)}</span>
-            </div>
-            <button className="avatar-btn" type="button" title={`${user.name} · ${user.role}`}>
+            <div className="user-chip" title={`${user.name} · ${user.role}`}>
               <span className="avatar">{initials(user.name)}</span>
-            </button>
-            <button className="icon-btn" type="button" onClick={onLogout} title="Keluar">
-              <LogOut size={16} />
-            </button>
+              <span className="user-chip-text">
+                <b>{user.name}</b>
+                <small>{user.role}</small>
+              </span>
+              <button className="icon-btn" type="button" onClick={onLogout} title="Keluar" aria-label="Keluar">
+                <LogOut size={15} />
+              </button>
+            </div>
           </div>
         </header>
+
+        <section className="greet-row" aria-label={current?.title ?? "Live Board"}>
+          <div className="greet-text">
+            <h1>
+              {greeting}, {user.name}
+            </h1>
+            <p>{VIEW_SUBTITLE[view]}</p>
+          </div>
+
+          <div className="greet-meta">
+            <div className="date-chip" aria-label="Waktu Indonesia Barat">
+              <b>{dayNumber}</b>
+              <span>
+                {dayName}, {monthName}
+                <small>{formatWib(now, true)} WIB</small>
+              </span>
+            </div>
+            <span className="shift-tag">{shift}</span>
+            <div className={`gateway-pill ${sseConnected ? "" : "is-off"}`} title="Status stream real-time">
+              <span className="pulse-dot" />
+              <span className="gateway-label">SSE</span>
+              <b>{sseConnected ? "LIVE" : "OFFLINE"}</b>
+            </div>
+            <div
+              className={`gateway-pill is-wa ${waStatus === "connected" ? "" : "is-off"}`}
+              title={`WhatsApp gateway: ${waStatus}`}
+            >
+              <Radio size={12} />
+              <span className="gateway-label">WA</span>
+              <b>{waStatus === "connected" ? "AKTIF" : waStatus === "qr" ? "PAIRING" : "OFFLINE"}</b>
+            </div>
+            <label className="topbar-search">
+              <Search size={15} />
+              <input
+                id="global-search"
+                type="search"
+                value={search}
+                onChange={(event) => onSearch(event.target.value)}
+                placeholder="Cari tiket, nama, wilayah..."
+                aria-label="Cari tiket"
+              />
+              <kbd>/</kbd>
+            </label>
+          </div>
+        </section>
 
         <main className="main">{children}</main>
       </div>

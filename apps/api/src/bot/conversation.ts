@@ -137,10 +137,10 @@ function groupMediaDrafts(
   const media = onlyIds?.length
     ? all.filter((item) => onlyIds.includes(item.id))
     : all;
-  const short = ticketNo.split("-").at(-1) ?? ticketNo;
   return media.map((item, index) => {
     const caption = [
-      `Lampiran #${short} (${index + 1}/${media.length})`,
+      // Nomor tiket lengkap supaya anggota bisa me-reply foto ini dengan OTW/TIBA/SELESAI.
+      `Lampiran #${ticketNo} (${index + 1}/${media.length})`,
       item.caption ? item.caption.slice(0, 700) : null
     ]
       .filter(Boolean)
@@ -180,7 +180,6 @@ export function dispatchTicketToUrc(
     ? (app.db.select().from(regions).where(eq(regions.id, ticket.regionId)).get()?.name ?? null)
     : null;
   const category = CATEGORY_META[ticket.category as Category]?.short ?? ticket.category;
-  const short = ticket.ticketNo.split("-").at(-1) ?? ticket.ticketNo;
   const lokasi = [
     ticket.address,
     regionName && regionName !== ticket.address ? `Desa/Kel. ${regionName}` : null
@@ -207,7 +206,7 @@ export function dispatchTicketToUrc(
     `Peta: ${peta}`,
     `Masuk: ${formatLocalTime(ticket.createdAt, settings.unitTimezone)}`,
     acceptedByName ? `Diterima piket: ${acceptedByName}` : null,
-    `Aksi: /otw ${short} | /tiba ${short} | /selesai ${short}`
+    "Aksi: *balas (reply) pesan ini* dengan OTW, TIBA, SELESAI, atau TUNDA <alasan>"
   ]
     .filter(Boolean)
     .join("\n");
@@ -2018,7 +2017,14 @@ export function handleGroupCommand(
     };
   }
   if (to === "ditunda" && !note) {
-    return { replies: [reply(input.groupJid, `Format: /tunda ${ref} <alasan>`)] };
+    return {
+      replies: [
+        reply(
+          input.groupJid,
+          `Sertakan alasan: balas pesan tiket dengan TUNDA <alasan>, atau /tunda ${ref} <alasan>`
+        )
+      ]
+    };
   }
 
   const attachedMedia =

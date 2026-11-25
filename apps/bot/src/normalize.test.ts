@@ -215,4 +215,32 @@ describe("normalizeMessage", () => {
       text: "Lampiran"
     });
   });
+
+  it("captures the quoted text of a group reply", () => {
+    const result = normalizeMessage(
+      message({
+        key: {
+          remoteJid: "120363000000000000@g.us",
+          fromMe: false,
+          id: "MSG-REPLY",
+          participant: "628000000001@s.whatsapp.net"
+        },
+        message: {
+          extendedTextMessage: {
+            text: "otw",
+            contextInfo: {
+              stanzaId: "BOT-MSG-1",
+              participant: "628999999999@s.whatsapp.net",
+              quotedMessage: { conversation: "🚨 *P1 · Lainnya*\n#DEMO-261123-014 — DARURAT" }
+            }
+          }
+        }
+      })
+    );
+    expect(result).toMatchObject({
+      isGroup: true,
+      text: "otw",
+      quotedText: "🚨 *P1 · Lainnya*\n#DEMO-261123-014 — DARURAT"
+    });
+  });
 });

@@ -15,6 +15,7 @@ import type { AppConfig } from "@sigap/config";
 import type { BotApi, GatewayCommand } from "./api-client.js";
 import type { BotLogger } from "./logger.js";
 import { InboundQueue } from "./inbound-queue.js";
+import { replyToGroupCommand, ticketNoFromQuoted } from "./group-reply.js";
 import { normalizeMessage } from "./normalize.js";
 import type { NormalizedInbound } from "./types.js";
 
@@ -401,6 +402,20 @@ export class WhatsAppClient {
       socket.ev.on("messages.upsert", (event) => {
         if (event.type !== "notify") return;
         for (const message of event.messages) {
+          if (message.key.remoteJid?.endsWith("@g.us") && !message.key.fromMe && !message.message) {
+            // Biasanya gagal dekripsi (sesi/sender-key grup belum sinkron). WhatsApp
+            // akan mencoba kirim ulang; log ini membantu diagnosis bila tidak pernah masuk.
+            this.logger.warn(
+              {
+                messageId: message.key.id,
+                groupJid: message.key.remoteJid,
+                sender: message.key.participant,
+                stubType: message.messageStubType,
+                stubParams: message.messageStubParameters
+              },
+              "Pesan grup tidak bisa dibaca (kemungkinan gagal dekripsi)"
+            );
+          }
           let normalized: ReturnType<typeof normalizeMessage>;
           try {
             normalized = normalizeMessage(message);
@@ -409,7 +424,23 @@ export class WhatsAppClient {
             continue;
           }
           if (!normalized) continue;
-          if (normalized.isGroup && !normalized.text?.startsWith("/")) continue;
+          if (normalized.isGroup) {
+            // Reply "otw"/"tiba"/"selesai"/"tunda ..." ke pesan tiket → perintah grup.
+            const fromReply = replyToGroupCommand(normalized.text, normalized.quotedText);
+            if (fromReply) {
+              this.logger.info(
+                { messageId: normalized.waMessageId, reply: normalized.text, command: fromReply },
+                "Aksi grup via reply"
+              );
+              normalized = { ...normalized, text: fromReply };
+            } else if (ticketNoFromQuoted(normalized.quotedText)) {
+              this.logger.info(
+                { messageId: normalized.waMessageId, reply: normalized.text?.slice(0, 80) },
+                "Reply ke pesan tiket diabaikan: bukan kata aksi"
+              );
+            }
+            if (!normalized.text?.startsWith("/")) continue;
+          }
           const current = normalized;
           // Diproses berurutan per chat dan disimpan ke disk sebelum dikirim
           // ke API, sehingga tidak hilang saat API restart dan tidak tertukar urutannya.

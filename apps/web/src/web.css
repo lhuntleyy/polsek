@@ -27,7 +27,7 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(900px 520px at 12% 0%, rgba(255, 176, 32, 0.09), transparent 62%),
+    radial-gradient(900px 520px at 12% 0%, rgba(var(--accent-rgb), 0.09), transparent 62%),
     radial-gradient(800px 520px at 92% 12%, rgba(77, 159, 255, 0.07), transparent 62%),
     radial-gradient(900px 600px at 50% 110%, rgba(45, 212, 191, 0.04), transparent 65%);
 }
@@ -89,8 +89,8 @@
   transition: 0.16s;
 }
 .login-field input:focus {
-  border-color: rgba(255, 176, 32, 0.5);
-  box-shadow: 0 0 0 3px rgba(255, 176, 32, 0.07);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.07);
 }
 .login-field input::placeholder { color: var(--dim); }
 .login-totp { border: 0; padding: 0; }
@@ -145,7 +145,7 @@
 .login-demo code {
   padding: 1px 4px;
   border-radius: 3px;
-  background: rgba(255, 176, 32, 0.09);
+  background: rgba(var(--accent-rgb), 0.09);
   color: var(--amber);
   font: 500 9px var(--font-mono);
 }
@@ -208,7 +208,7 @@
   color: var(--dim);
   transition: 0.16s;
 }
-.topbar-search:focus-within { border-color: rgba(255, 176, 32, 0.35); }
+.topbar-search:focus-within { border-color: rgba(var(--accent-rgb), 0.35); }
 .topbar-search input {
   flex: 1;
   min-width: 0;
@@ -327,7 +327,7 @@
 .form-field input:focus,
 .form-field select:focus,
 .form-field textarea:focus {
-  border-color: rgba(255, 176, 32, 0.4);
+  border-color: rgba(var(--accent-rgb), 0.4);
 }
 .form-field .textarea { min-height: 88px; font-family: var(--font-mono); font-size: 9.5px; }
 .toggle-row {
@@ -396,7 +396,7 @@
   font: 400 9.5px var(--font-mono);
   outline: none;
 }
-.officer-input:focus { border-color: rgba(255, 176, 32, 0.4); }
+.officer-input:focus { border-color: rgba(var(--accent-rgb), 0.4); }
 .officer-row .btn { height: 28px; font-size: 9px; padding: 0 7px; }
 .officer-edit {
   display: grid;

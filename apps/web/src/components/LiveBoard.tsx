@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from "react";
-import { Inbox, Plus, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Inbox, Layers, Plus, RefreshCw } from "lucide-react";
 import type {
   ManualTicketPayload,
   Officer,
@@ -81,9 +81,39 @@ export function LiveBoard({
       proses: tickets.filter((ticket) => ["diterima", "otw", "ditkp", "ditunda"].includes(ticket.status))
         .length,
       selesai: tickets.filter((ticket) => ticket.status === "selesai").length,
-      p1: active.filter((ticket) => ticket.priority === "P1").length
+      active: active.length,
+      p1: active.filter((ticket) => ticket.priority === "P1").length,
+      p1Waiting: active.filter((ticket) => ticket.priority === "P1" && ticket.status === "baru").length
     };
   }, [tickets]);
+
+  // Laporan masuk per jam selama 12 jam terakhir, untuk sparkline kartu "Tiket aktif".
+  const hourly = useMemo(() => {
+    const buckets = new Array(12).fill(0) as number[];
+    const now = Date.now();
+    for (const ticket of tickets) {
+      const age = (now - new Date(ticket.createdAt).getTime()) / 3_600_000;
+      if (age >= 0 && age < 12) buckets[11 - Math.floor(age)] += 1;
+    }
+    return buckets;
+  }, [tickets]);
+
+  const waiting = useMemo(
+    () =>
+      tickets
+        .filter((ticket) => ticket.status === "baru")
+        .sort((a, b) => {
+          if (a.priority === "P1" && b.priority !== "P1") return -1;
+          if (b.priority === "P1" && a.priority !== "P1") return 1;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        })
+        .slice(0, 2),
+    [tickets]
+  );
+
+  const doneShare = stats.all > 0 ? stats.selesai / stats.all : 0;
+  const doneSegments = 20;
+  const doneFilled = Math.round(doneShare * doneSegments);
 
   const visible = useMemo(
     () => filterTickets(tickets, filter, search),
@@ -102,6 +132,103 @@ export function LiveBoard({
 
   return (
     <section className="view is-active" data-view-panel="live">
+      <div className="live-stats">
+        <article className="stat-card">
+          <header>
+            <span className="stat-icon">
+              <Layers size={16} />
+            </span>
+            <span className="stat-badge">{stats.baru} baru</span>
+          </header>
+          <div className="stat-label">Tiket aktif</div>
+          <div className="stat-body">
+            <div>
+              <b className="stat-value">{stats.active}</b>
+              <small>{stats.proses} sedang diproses</small>
+            </div>
+            <Sparkline values={hourly} />
+          </div>
+        </article>
+
+        <article className={`stat-card ${stats.p1 > 0 ? "is-danger" : ""}`}>
+          <header>
+            <span className="stat-icon">
+              <AlertTriangle size={16} />
+            </span>
+            <span className="stat-badge">{stats.p1 > 0 ? "DARURAT" : "Aman"}</span>
+          </header>
+          <div className="stat-label">P1 darurat aktif</div>
+          <div className="stat-body">
+            <div>
+              <b className="stat-value">{String(stats.p1).padStart(2, "0")}</b>
+              <small>
+                {stats.p1 > 0
+                  ? `${stats.p1Waiting} belum diterima piket`
+                  : "Tidak ada laporan darurat aktif"}
+              </small>
+            </div>
+          </div>
+        </article>
+
+        <article className="stat-card">
+          <header>
+            <span className="stat-icon">
+              <CheckCircle2 size={16} />
+            </span>
+            <span className="stat-badge is-good">{Math.round(doneShare * 100)}%</span>
+          </header>
+          <div className="stat-label">Selesai</div>
+          <div className="stat-body is-column">
+            <div>
+              <b className="stat-value">{stats.selesai}</b>
+              <small>dari {stats.all} tiket</small>
+            </div>
+            <div className="segment-bar" aria-hidden="true">
+              {Array.from({ length: doneSegments }, (_, index) => (
+                <i key={index} className={index < doneFilled ? "is-on" : ""} />
+              ))}
+            </div>
+          </div>
+        </article>
+
+        <article className="stat-card is-ink">
+          <header>
+            <span className="stat-label">Menunggu diterima</span>
+            <span className="stat-badge">
+              <span className="live-dot" /> Langsung
+            </span>
+          </header>
+          <div className="ink-body">
+            <b className="stat-value">{String(stats.baru).padStart(2, "0")}</b>
+            <div className="ink-list">
+              {waiting.length === 0 ? (
+                <small>Semua laporan sudah diterima.</small>
+              ) : (
+                waiting.map((ticket) => (
+                  <button
+                    key={ticket.id}
+                    type="button"
+                    className={`ink-item ${ticket.priority === "P1" ? "is-p1" : ""}`}
+                    onClick={() => selectTicket(ticket.id)}
+                  >
+                    <i />
+                    <span>
+                      <b>
+                        {shortTicket(ticket.ticketNo)} · {ticket.title}
+                      </b>
+                      <small>
+                        {ticket.region ?? "Wilayah belum jelas"} · {timeAgo(ticket.createdAt)}
+                      </small>
+                    </span>
+                    <ArrowUpRight size={14} />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </article>
+      </div>
+
       <div className="board">
         <aside className="panel queue-panel">
           <header className="panel-head queue-head">
@@ -114,12 +241,13 @@ export function LiveBoard({
             <div className="queue-head-actions">
               {canCreateManual ? (
                 <button
-                  className="icon-btn"
+                  className="btn btn-primary btn-pill"
                   type="button"
                   onClick={() => setManualOpen(true)}
                   title="Tiket manual"
                 >
-                  <Plus size={16} />
+                  <Plus size={15} />
+                  <span>Tiket manual</span>
                 </button>
               ) : null}
               <button className="icon-btn" type="button" onClick={onRefresh} title="Muat ulang">
@@ -127,21 +255,6 @@ export function LiveBoard({
               </button>
             </div>
           </header>
-
-          <div className="queue-stats">
-            <div className="qstat is-amber">
-              <span>Baru</span>
-              <b>{stats.baru}</b>
-            </div>
-            <div className="qstat is-red">
-              <span>P1 aktif</span>
-              <b>{stats.p1}</b>
-            </div>
-            <div className="qstat is-green">
-              <span>Selesai</span>
-              <b>{stats.selesai}</b>
-            </div>
-          </div>
 
           <div className="filter-row">
             {(
@@ -271,5 +384,24 @@ export function LiveBoard({
         }}
       />
     </section>
+  );
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  const width = 120;
+  const height = 44;
+  const max = Math.max(1, ...values);
+  const step = width / Math.max(1, values.length - 1);
+  const points = values.map((value, index) => [index * step, height - 4 - (value / max) * (height - 10)] as const);
+  const line = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const area = `${line} L${width} ${height} L0 ${height} Z`;
+  const last = points[points.length - 1];
+  return (
+    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Laporan masuk per jam, 12 jam terakhir">
+      <title>Laporan masuk per jam, 12 jam terakhir</title>
+      <path className="sparkline-area" d={area} />
+      <path className="sparkline-line" d={line} />
+      {last ? <circle className="sparkline-dot" cx={last[0]} cy={last[1]} r={3} /> : null}
+    </svg>
   );
 }
