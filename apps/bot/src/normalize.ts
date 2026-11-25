@@ -55,6 +55,23 @@ export function normalizeMessage(message: WAMessage): NormalizedInbound | null {
     content.listResponseMessage?.title ??
     undefined;
 
+  // Teks pesan yang di-reply (dipakai untuk aksi tiket "by reply" di grup URC).
+  const contextInfo =
+    content.extendedTextMessage?.contextInfo ??
+    content.imageMessage?.contextInfo ??
+    content.videoMessage?.contextInfo ??
+    undefined;
+  const quoted = contextInfo?.quotedMessage
+    ? extractMessageContent(contextInfo.quotedMessage)
+    : undefined;
+  const quotedText =
+    quoted?.conversation ??
+    quoted?.extendedTextMessage?.text ??
+    quoted?.imageMessage?.caption ??
+    quoted?.videoMessage?.caption ??
+    quoted?.documentMessage?.caption ??
+    undefined;
+
   const location =
     content.locationMessage ?? content.liveLocationMessage ?? null;
 
@@ -88,6 +105,7 @@ export function normalizeMessage(message: WAMessage): NormalizedInbound | null {
     isGroup,
     type,
     text: text?.trim() ? text.trim() : undefined,
+    ...(quotedText?.trim() ? { quotedText: quotedText.trim() } : {}),
     location: location
       ? {
           lat: Number(location.degreesLatitude),
