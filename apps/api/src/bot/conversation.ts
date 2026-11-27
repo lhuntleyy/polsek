@@ -99,8 +99,14 @@ interface ConversationContext {
 }
 
 const ACTIVE_STATUSES: TicketStatus[] = ["baru", "diterima", "otw", "ditkp", "ditunda"];
+/**
+ * Kata kunci darurat, termasuk bentuk berimbuhan yang umum dipakai warga:
+ * "perampokan", "dirampok", "bersenjata", "pembunuhan", "kebanjiran",
+ * "dibegal", "pembegalan". Imbuhan dibatasi daftar eksplisit supaya kata
+ * lain (mis. "melakukan", "sapi") tidak ikut terpicu.
+ */
 const EMERGENCY_REGEX =
-  /\b(DARURAT|TAWURAN|KEBAKARAN|BEGAL|RAMPOK|LAKA|KECELAKAAN|BANJIR|POHON TUMBANG|GEMPA|ORANG MENINGGAL|SENJATA|BUNUH)\b/i;
+  /\b(?:DARURAT|TAWURAN|KEBAKARAN|KECELAKAAN|POHON TUMBANG|GEMPA|ORANG MENINGGAL|LAKA|(?:PEM|PE|PER|DI|TER|BER|KE|ME|MEM)?(?:BEGAL|RAMPOK|SENJATA|BUNUH|BANJIR)(?:AN|NYA|KAN|IN)?)\b/i;
 
 function phoneFromJid(jid: string): string {
   const local = jid.split("@")[0]?.split(":")[0]?.replace(/\D/g, "") ?? "";
@@ -822,7 +828,7 @@ function outsideEmergencyReply(
   const nearest = regionList.find((region) => region.id === nearestRegionId)?.name;
   return [
     `Lokasi yang Anda kirim tampaknya di luar wilayah hukum ${settings.unitName}.`,
-    "Laporan darurat Anda TETAP diteruskan ke piket untuk diverifikasi.",
+    "Laporan darurat Anda TETAP diteruskan ke petugas kami.",
     nearest ? `Wilayah terdekat kami: ${nearest}.` : null,
     "Untuk respons tercepat, segera telepon 110."
   ]
@@ -1071,15 +1077,15 @@ function handleInboundCore(
           actorId: null,
           fromStatus: "baru",
           toStatus: "baru",
-          note: "Lokasi yang dikirim pelapor terdeteksi DI LUAR wilkum. Tiket tetap aktif — piket wajib verifikasi lalu putuskan teruskan ke Polsek terdekat atau tolak.",
+          note: "Lokasi yang dikirim pelapor terdeteksi DI LUAR wilkum. Tiket tetap diteruskan ke grup URC — piket mohon verifikasi dan koordinasikan dengan Polsek terdekat bila perlu.",
           createdAt: new Date().toISOString()
         })
         .run();
       replies.push(reply(input.chatJid, outsideEmergencyReply(app, nearestId, regionList)));
     }
-    // Darurat di dalam wilkum langsung ke grup URC; yang terdeteksi di luar
-    // wilkum tetap menunggu verifikasi piket (bisa jadi wewenang Polsek lain).
-    if (!outside && autoDispatchEmergency(app, created.ticket.id)) {
+    // Semua darurat langsung ke grup URC, termasuk yang lokasinya terdeteksi di
+    // luar wilkum (GPS/polygon bisa meleset). Forward grup memberi tanda ⚠️.
+    if (autoDispatchEmergency(app, created.ticket.id)) {
       replies.push(
         reply(input.chatJid, "Laporan darurat Anda langsung diteruskan ke tim URC di lapangan.")
       );

@@ -454,6 +454,24 @@ describe("WhatsApp conversation engine", () => {
     expect(second.json().duplicate).toBe(true);
   });
 
+  it("recognises affixed emergency words such as perampokan / bersenjata", async () => {
+    const sender = "6281111111177@s.whatsapp.net";
+    await app.inject({
+      method: "POST",
+      url: "/internal/wa/inbound",
+      headers: internalHeaders(),
+      payload: inbound(sender, "text", {
+        text: "Tolong sedang ada perampokan di rumah saya dan bersenjata"
+      })
+    });
+    const last = app.sqlite
+      .prepare(
+        "SELECT payload_json FROM outbound_messages WHERE target_jid = ? ORDER BY created_at DESC, rowid DESC LIMIT 1"
+      )
+      .get(sender) as { payload_json: string };
+    expect(JSON.parse(last.payload_json).text).toContain("kejadian DARURAT");
+  });
+
   it("asks for confirmation on emergency keywords, then creates P1 on YA", async () => {
     const sender = "6281111111113@s.whatsapp.net";
     const countP1 = async () =>
@@ -2913,7 +2931,8 @@ describe("Audit hardening regressions", () => {
       location_status: string;
       lat: number;
     };
-    expect(outsideTicket.status).toBe("baru");
+    // Darurat selalu langsung diteruskan ke grup URC, walau di luar wilkum.
+    expect(outsideTicket.status).toBe("diterima");
     expect(outsideTicket.reject_reason).toBeNull();
     expect(outsideTicket.location_status).toBe("outside");
     expect(outsideTicket.lat).toBeCloseTo(-6.9);
