@@ -7,6 +7,7 @@ import {
   BellOff,
   BookOpen,
   Database,
+  FileText,
   LogOut,
   Map,
   Maximize2,
@@ -18,11 +19,11 @@ import {
   ShieldCheck,
   Sun
 } from "lucide-react";
-import type { Role, Unit, User, WaGateway } from "../lib/types";
+import type { MenuId, Role, Unit, User, WaGateway } from "../lib/types";
 import type { Theme } from "../lib/theme";
 import { formatWib, initials } from "../lib/format";
 
-export type View = "live" | "map" | "analytics" | "data" | "handover" | "system" | "guide";
+export type View = MenuId;
 
 const VIEWS: Array<{
   id: View;
@@ -32,6 +33,7 @@ const VIEWS: Array<{
   roles?: Role[];
 }> = [
   { id: "live", label: "Live", title: "Live Board", icon: Activity },
+  { id: "reports", label: "Laporan", title: "Laporan Masuk", icon: FileText },
   { id: "map", label: "Peta", title: "Peta Wilkum", icon: Map },
   { id: "analytics", label: "Analitik", title: "Analitik", icon: BarChart3 },
   {
@@ -54,6 +56,7 @@ const VIEWS: Array<{
 
 const VIEW_SUBTITLE: Record<View, string> = {
   live: "ini ringkasan piket hari ini.",
+  reports: "semua laporan yang sudah masuk.",
   map: "sebaran laporan di wilayah hukum.",
   analytics: "tren laporan dan kinerja respons.",
   data: "data tiket, wilayah, dan registry.",
@@ -61,6 +64,16 @@ const VIEW_SUBTITLE: Record<View, string> = {
   system: "pengaturan unit dan WhatsApp gateway.",
   guide: "panduan penggunaan SIGAP."
 };
+
+/** Menu yang tampil untuk role ini: lolos batas role bawaan dan tidak disembunyikan admin. */
+export function visibleViews(role: Role, hidden: readonly View[] = []): View[] {
+  return VIEWS.filter(
+    (item) => (!item.roles || item.roles.includes(role)) && !hidden.includes(item.id)
+  ).map((item) => item.id);
+}
+
+/** Daftar menu + batas role bawaan, dipakai juga oleh pengaturan admin. */
+export const MENU_ITEMS = VIEWS.map(({ id, title, roles }) => ({ id, title, roles }));
 
 interface ShellProps {
   user: User;
@@ -80,6 +93,7 @@ interface ShellProps {
   onToggleTheme: () => void;
   waStatus: WaGateway["status"];
   env?: string;
+  hiddenMenus?: View[];
   children: ReactNode;
 }
 
@@ -101,6 +115,7 @@ export function Shell({
   onToggleTheme,
   waStatus,
   env,
+  hiddenMenus = [],
   children
 }: ShellProps) {
   const [now, setNow] = useState(new Date());
@@ -124,7 +139,8 @@ export function Shell({
         ? "Shift Siang · 14:00–22:00"
         : "Shift Malam · 22:00–06:00";
   const current = VIEWS.find((item) => item.id === view);
-  const visibleViews = VIEWS.filter((item) => !item.roles || item.roles.includes(user.role));
+  const allowed = visibleViews(user.role, hiddenMenus);
+  const menuItems = VIEWS.filter((item) => allowed.includes(item.id));
   const greeting =
     hour >= 4 && hour < 11
       ? "Selamat pagi"
@@ -141,7 +157,7 @@ export function Shell({
     <div className="app">
       <aside className="rail" aria-label="Navigasi utama (mobile)">
         <nav className="rail-nav">
-          {visibleViews.map((item) => {
+          {menuItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
@@ -179,7 +195,7 @@ export function Shell({
           </div>
 
           <nav className="pill-nav" aria-label="Navigasi utama">
-            {visibleViews.map((item) => (
+            {menuItems.map((item) => (
               <button
                 key={item.id}
                 type="button"

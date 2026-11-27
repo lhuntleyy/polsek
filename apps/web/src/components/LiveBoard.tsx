@@ -1,6 +1,8 @@
-import { lazy, Suspense, useMemo, useState } from "react";
-import { AlertTriangle, ArrowUpRight, CheckCircle2, Inbox, Layers, Plus, RefreshCw } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { ArrowUpRight, Inbox, MapPin, PieChart, Plus, RefreshCw } from "lucide-react";
+import { api } from "../lib/api";
 import type {
+  AnalyticsSummary,
   ManualTicketPayload,
   Officer,
   Region,
@@ -9,6 +11,7 @@ import type {
   TicketDetail as TicketDetailData
 } from "../lib/types";
 import {
+  CATEGORY_META,
   PRIORITY_META,
   STATUS_META,
   filterTickets,
@@ -24,8 +27,6 @@ const WebMap = lazy(() =>
   import("./WebMap").then((module) => ({ default: module.WebMap }))
 );
 
-export type LiveFilter = "all" | "baru" | "proses" | "selesai";
-
 interface LiveBoardProps {
   tickets: Ticket[];
   regions: Region[];
@@ -33,11 +34,9 @@ interface LiveBoardProps {
   userRole: Role;
   detail: TicketDetailData | null;
   selectedId: string | null;
-  filter: LiveFilter;
   search: string;
   busy: boolean;
   canRevealPhone: boolean;
-  onFilter: (filter: LiveFilter) => void;
   onSelect: (id: string) => void;
   onCloseDetail: () => void;
   onRefresh: () => void;
@@ -57,11 +56,9 @@ export function LiveBoard({
   userRole,
   detail,
   selectedId,
-  filter,
   search,
   busy,
   canRevealPhone,
-  onFilter,
   onSelect,
   onCloseDetail,
   onRefresh,
@@ -73,30 +70,46 @@ export function LiveBoard({
   const canCreateManual = ["piket", "pawas", "admin"].includes(userRole);
   const [manualOpen, setManualOpen] = useState(false);
   const [creatingManual, setCreatingManual] = useState(false);
-  const stats = useMemo(() => {
-    const active = tickets.filter(isActiveTicket);
-    return {
-      all: tickets.length,
-      baru: tickets.filter((ticket) => ticket.status === "baru").length,
-      proses: tickets.filter((ticket) => ["diterima", "otw", "ditkp", "ditunda"].includes(ticket.status))
-        .length,
-      selesai: tickets.filter((ticket) => ticket.status === "selesai").length,
-      active: active.length,
-      p1: active.filter((ticket) => ticket.priority === "P1").length,
-      p1Waiting: active.filter((ticket) => ticket.priority === "P1" && ticket.status === "baru").length
-    };
-  }, [tickets]);
+  const waitingCount = useMemo(
+    () => tickets.filter((ticket) => ticket.status === "baru").length,
+    [tickets]
+  );
 
-  // Laporan masuk per jam selama 12 jam terakhir, untuk sparkline kartu "Tiket aktif".
-  const hourly = useMemo(() => {
-    const buckets = new Array(12).fill(0) as number[];
-    const now = Date.now();
-    for (const ticket of tickets) {
-      const age = (now - new Date(ticket.createdAt).getTime()) / 3_600_000;
-      if (age >= 0 && age < 12) buckets[11 - Math.floor(age)] += 1;
-    }
-    return buckets;
-  }, [tickets]);
+  // Statistik jenis kasus & kasus tertinggi per wilayah dari API analitik,
+  // dimuat ulang (debounce) setiap antrean berubah lewat SSE.
+  const [caseStats, setCaseStats] = useState<AnalyticsSummary | null>(null);
+  const ticketsKey = useMemo(
+    () =>
+      tickets.reduce(
+        (key, ticket) => (ticket.updatedAt > key ? ticket.updatedAt : key),
+        String(tickets.length)
+      ),
+    [tickets]
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api
+        .analytics()
+        .then((result) => {
+          if (!cancelled) setCaseStats(result);
+        })
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [ticketsKey]);
+
+  const categoryRows = useMemo(() => {
+    if (!caseStats) return [];
+    return Object.entries(caseStats.byCategory)
+      .filter(([, count]) => count > 0)
+      .sort(([, a], [, b]) => b - a);
+  }, [caseStats]);
+  const categoryMax = Math.max(1, ...categoryRows.map(([, count]) => count));
+  const regionTop = (caseStats?.topLocations ?? []).filter((loc) => loc.topCategory).slice(0, 4);
 
   const waiting = useMemo(
     () =>
@@ -111,13 +124,9 @@ export function LiveBoard({
     [tickets]
   );
 
-  const doneShare = stats.all > 0 ? stats.selesai / stats.all : 0;
-  const doneSegments = 20;
-  const doneFilled = Math.round(doneShare * doneSegments);
-
   const visible = useMemo(
-    () => filterTickets(tickets, filter, search),
-    [tickets, filter, search]
+    () => filterTickets(tickets, "all", search),
+    [tickets, search]
   );
 
   function selectTicket(id: string) {
@@ -132,62 +141,64 @@ export function LiveBoard({
 
   return (
     <section className="view is-active" data-view-panel="live">
-      <div className="live-stats">
-        <article className="stat-card">
+      <div className="live-stats is-cases">
+        <article className="stat-card case-card">
           <header>
             <span className="stat-icon">
-              <Layers size={16} />
+              <PieChart size={16} />
             </span>
-            <span className="stat-badge">{stats.baru} baru</span>
+            <span className="stat-badge">{caseStats?.total ?? 0} laporan</span>
           </header>
-          <div className="stat-label">Tiket aktif</div>
-          <div className="stat-body">
-            <div>
-              <b className="stat-value">{stats.active}</b>
-              <small>{stats.proses} sedang diproses</small>
-            </div>
-            <Sparkline values={hourly} />
+          <div className="stat-label">Jenis kasus</div>
+          <div className="case-bars">
+            {categoryRows.length === 0 ? (
+              <small className="muted">{caseStats ? "Belum ada laporan." : "Memuat..."}</small>
+            ) : (
+              categoryRows.slice(0, 5).map(([category, count]) => (
+                <div className="case-row" key={category}>
+                  <span className="case-name">{CATEGORY_META[category]?.short ?? category}</span>
+                  <span className="case-track">
+                    <span
+                      className="case-fill"
+                      style={{
+                        width: `${Math.round((count / categoryMax) * 100)}%`,
+                        background: CATEGORY_META[category]?.color
+                      }}
+                    />
+                  </span>
+                  <b className="case-value">{count}</b>
+                </div>
+              ))
+            )}
           </div>
         </article>
 
-        <article className={`stat-card ${stats.p1 > 0 ? "is-danger" : ""}`}>
+        <article className="stat-card case-card">
           <header>
             <span className="stat-icon">
-              <AlertTriangle size={16} />
+              <MapPin size={16} />
             </span>
-            <span className="stat-badge">{stats.p1 > 0 ? "DARURAT" : "Aman"}</span>
+            <span className="stat-badge">per wilayah</span>
           </header>
-          <div className="stat-label">P1 darurat aktif</div>
-          <div className="stat-body">
-            <div>
-              <b className="stat-value">{String(stats.p1).padStart(2, "0")}</b>
-              <small>
-                {stats.p1 > 0
-                  ? `${stats.p1Waiting} belum diterima piket`
-                  : "Tidak ada laporan darurat aktif"}
-              </small>
-            </div>
-          </div>
-        </article>
-
-        <article className="stat-card">
-          <header>
-            <span className="stat-icon">
-              <CheckCircle2 size={16} />
-            </span>
-            <span className="stat-badge is-good">{Math.round(doneShare * 100)}%</span>
-          </header>
-          <div className="stat-label">Selesai</div>
-          <div className="stat-body is-column">
-            <div>
-              <b className="stat-value">{stats.selesai}</b>
-              <small>dari {stats.all} tiket</small>
-            </div>
-            <div className="segment-bar" aria-hidden="true">
-              {Array.from({ length: doneSegments }, (_, index) => (
-                <i key={index} className={index < doneFilled ? "is-on" : ""} />
-              ))}
-            </div>
+          <div className="stat-label">Kasus tertinggi tiap daerah</div>
+          <div className="case-regions">
+            {regionTop.length === 0 ? (
+              <small className="muted">{caseStats ? "Belum ada data wilayah." : "Memuat..."}</small>
+            ) : (
+              regionTop.map((loc) => (
+                <div className="case-region" key={loc.id ?? "none"}>
+                  <span className="case-region-name">{loc.name}</span>
+                  <span
+                    className="case-region-top"
+                    style={{ ["--cat" as string]: CATEGORY_META[loc.topCategory!.category]?.color }}
+                  >
+                    {CATEGORY_META[loc.topCategory!.category]?.short ?? loc.topCategory!.label}{" "}
+                    <b>{loc.topCategory!.count}</b>
+                  </span>
+                  <small>{loc.count} total</small>
+                </div>
+              ))
+            )}
           </div>
         </article>
 
@@ -199,7 +210,7 @@ export function LiveBoard({
             </span>
           </header>
           <div className="ink-body">
-            <b className="stat-value">{String(stats.baru).padStart(2, "0")}</b>
+            <b className="stat-value">{String(waitingCount).padStart(2, "0")}</b>
             <div className="ink-list">
               {waiting.length === 0 ? (
                 <small>Semua laporan sudah diterima.</small>
@@ -256,31 +267,11 @@ export function LiveBoard({
             </div>
           </header>
 
-          <div className="filter-row">
-            {(
-              [
-                ["all", "Semua", stats.all],
-                ["baru", "Baru", stats.baru],
-                ["proses", "Proses", stats.proses],
-                ["selesai", "Selesai", stats.selesai]
-              ] as const
-            ).map(([value, label, count]) => (
-              <button
-                key={value}
-                className={`filter-chip ${filter === value ? "is-active" : ""}`}
-                type="button"
-                onClick={() => onFilter(value)}
-              >
-                {label} <b>{count}</b>
-              </button>
-            ))}
-          </div>
-
           <div className="queue-list">
             {visible.length === 0 ? (
               <div className="data-empty">
                 <Inbox size={18} />
-                <div>Tidak ada tiket pada filter ini.</div>
+                <div>Tidak ada tiket.</div>
               </div>
             ) : (
               visible.map((ticket) => {
@@ -384,24 +375,5 @@ export function LiveBoard({
         }}
       />
     </section>
-  );
-}
-
-function Sparkline({ values }: { values: number[] }) {
-  const width = 120;
-  const height = 44;
-  const max = Math.max(1, ...values);
-  const step = width / Math.max(1, values.length - 1);
-  const points = values.map((value, index) => [index * step, height - 4 - (value / max) * (height - 10)] as const);
-  const line = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-  const area = `${line} L${width} ${height} L0 ${height} Z`;
-  const last = points[points.length - 1];
-  return (
-    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Laporan masuk per jam, 12 jam terakhir">
-      <title>Laporan masuk per jam, 12 jam terakhir</title>
-      <path className="sparkline-area" d={area} />
-      <path className="sparkline-line" d={line} />
-      {last ? <circle className="sparkline-dot" cx={last[0]} cy={last[1]} r={3} /> : null}
-    </svg>
   );
 }

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { passwordProblem } from "./ChangePasswordPage";
+import { MenuVisibilityCard, menuHiddenProblem } from "./MenuVisibilityCard";
 import { toWhatsAppGroupJid, toWhatsAppJid } from "../lib/wa";
 import type { Theme } from "../lib/theme";
 import type {
@@ -43,6 +44,8 @@ interface SettingsPageProps {
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
   onTotpEnabled: () => void;
+  /** Dipanggil setelah pengaturan menu tersimpan, agar navigasi langsung ikut berubah. */
+  onMenuSaved?: (menuHidden: UnitSettings["menuHidden"]) => void;
 }
 
 function sizeLabel(bytes: number | null): string {
@@ -904,7 +907,8 @@ export function SettingsPage({
   onToast,
   theme,
   onThemeChange,
-  onTotpEnabled
+  onTotpEnabled,
+  onMenuSaved
 }: SettingsPageProps) {
   const isAdmin = user.role === "admin";
   const [settings, setSettings] = useState<UnitSettings | null>(null);
@@ -980,6 +984,11 @@ export function SettingsPage({
 
   async function save() {
     if (!settings) return;
+    const menuProblem = menuHiddenProblem(settings.menuHidden ?? {});
+    if (menuProblem) {
+      onToast({ title: "Pengaturan menu belum valid", message: menuProblem, type: "danger" });
+      return;
+    }
     setSaving(true);
     try {
       const result = await api.updateSettings({
@@ -997,9 +1006,11 @@ export function SettingsPage({
         escalation_pawas_seconds: Number(settings.escalationPawasSeconds) || 180,
         escalation_kapolsek_seconds: Number(settings.escalationKapolsekSeconds) || 600,
         alarm_sound_required: settings.alarmSoundRequired,
-        pii_masking: settings.piiMasking
+        pii_masking: settings.piiMasking,
+        menu_hidden: settings.menuHidden ?? {}
       });
       setSettings(result.settings);
+      onMenuSaved?.(result.settings.menuHidden ?? {});
       onToast({
         title: "Pengaturan disimpan",
         message: "Perubahan langsung dipakai API. Seed tidak akan menimpa nilai ini.",
@@ -1250,6 +1261,10 @@ export function SettingsPage({
           <div style={{ gridColumn: "1 / -1" }}>
             <GatewayCard onToast={onToast} />
           </div>
+          <MenuVisibilityCard
+            value={settings.menuHidden ?? {}}
+            onChange={(next) => update("menuHidden", next)}
+          />
           <section className="panel settings-card">
             <header className="card-head">
               <div>

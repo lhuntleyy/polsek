@@ -1,6 +1,7 @@
 import type { WASocket } from "@whiskeysockets/baileys";
 import type { BotApi } from "./api-client.js";
 import type { BotLogger } from "./logger.js";
+import { audioLabel, buildMediaContent } from "./media-content.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,21 +43,22 @@ export function startOutboxWorker(
             }
             const media = await api.fetchMedia(item.payload.mediaId);
             const kind = item.payload.kind ?? "image";
-            const caption = item.payload.caption?.slice(0, 1000);
-            const content =
-              kind === "video"
-                ? { video: media.buffer, mimetype: media.mime, caption }
-                : kind === "audio"
-                  ? {
-                      audio: media.buffer,
-                      mimetype: media.mime,
-                      ptt: media.mime.includes("ogg") || media.mime.includes("opus")
-                    }
-                  : { image: media.buffer, mimetype: media.mime, caption };
+            const content = buildMediaContent(kind, media.buffer, media.mime, item.payload.caption);
             await activeSocket.sendMessage(
               item.targetJid,
               content as Parameters<WASocket["sendMessage"]>[1]
             );
+            if (kind === "audio") {
+              const label = audioLabel(item.payload.caption);
+              if (label) {
+                try {
+                  await activeSocket.sendMessage(item.targetJid, { text: label });
+                } catch (labelError) {
+                  // Audio sudah terkirim; jangan gagalkan item (mencegah voice note dobel).
+                  logger.warn({ id: item.id, err: labelError }, "Label voice note gagal dikirim");
+                }
+              }
+            }
           } else {
             const text = item.payload?.text;
             if (!text) throw new Error(`Payload ${item.kind} belum didukung`);

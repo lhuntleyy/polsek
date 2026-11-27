@@ -234,6 +234,9 @@ export function registerTicketRoutes(app: FastifyInstance): void {
     if (query.status) conditions.push(eq(tickets.status, query.status));
     if (query.priority) conditions.push(eq(tickets.priority, query.priority));
     if (query.regionId) conditions.push(eq(tickets.regionId, query.regionId));
+    if (query.category) conditions.push(eq(tickets.category, query.category));
+    if (query.from) conditions.push(gte(tickets.createdAt, query.from));
+    if (query.to) conditions.push(lte(tickets.createdAt, query.to));
     if (user.role === "bhabin") {
       if (!user.regionId) {
         throw forbidden("Akun bhabin belum terikat wilayah");

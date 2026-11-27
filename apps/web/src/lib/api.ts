@@ -6,6 +6,7 @@ import type {
   HandoverPayload,
   HandoverSummary,
   ManualTicketPayload,
+  MenuId,
   Priority,
   PublicConfig,
   Region,
@@ -75,6 +76,9 @@ export interface TicketFilters {
   status?: TicketStatus;
   priority?: Priority;
   regionId?: string;
+  category?: string;
+  from?: string;
+  to?: string;
   q?: string;
   limit?: number;
   cursor?: string;
@@ -93,7 +97,7 @@ export const api = {
   publicConfig: () => request<PublicConfig>("/api/public/config"),
 
   login: (username: string, password: string, totp?: string) =>
-    request<{ user: User; unit: PublicConfig["unit"]; expiresAt: string }>(
+    request<{ user: User; unit: PublicConfig["unit"]; hiddenMenus?: MenuId[]; expiresAt: string }>(
       "/api/auth/login",
       {
         method: "POST",
@@ -101,7 +105,7 @@ export const api = {
       }
     ),
 
-  me: () => request<{ user: User }>("/api/me"),
+  me: () => request<{ user: User; hiddenMenus?: MenuId[] }>("/api/me"),
 
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: boolean }>("/api/auth/password", {
@@ -129,6 +133,9 @@ export const api = {
         status: filters.status,
         priority: filters.priority,
         regionId: filters.regionId,
+        category: filters.category,
+        from: filters.from,
+        to: filters.to,
         q: filters.q,
         limit: filters.limit ?? 50,
         cursor: filters.cursor

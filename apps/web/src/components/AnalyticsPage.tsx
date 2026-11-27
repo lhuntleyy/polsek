@@ -80,6 +80,12 @@ export function AnalyticsPage({
     ...(summary?.heatmap.values.flat() ?? [1]),
     1
   );
+  const topCategory = summary
+    ? Object.entries(summary.byCategory)
+        .filter(([, count]) => count > 0)
+        .sort(([, a], [, b]) => b - a)[0] ?? null
+    : null;
+  const topRegion = summary?.topLocations?.find((loc) => loc.id !== null) ?? null;
   const ackPercent = summary
     ? percent(summary.sla.p1AckWithinTarget, summary.sla.p1AckTotal)
     : "—";
@@ -138,21 +144,21 @@ export function AnalyticsPage({
               <div className="kpi-delta">{summary.active} masih aktif</div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-label">Diproses</div>
-              <div className="kpi-value">{summary.processing ?? 0}</div>
-              <div className="kpi-delta">{summary.waiting ?? 0} menunggu diterima</div>
-            </div>
-            <div className="kpi-card">
-              <div className="kpi-label">P1 aktif</div>
-              <div className="kpi-value">{summary.p1Active}</div>
-              <div className="kpi-delta">Perlu perhatian</div>
-            </div>
-            <div className="kpi-card">
-              <div className="kpi-label">Selesai</div>
-              <div className="kpi-value">{summary.closed}</div>
+              <div className="kpi-label">Jenis kasus terbanyak</div>
+              <div className="kpi-value">
+                {topCategory ? (CATEGORY_META[topCategory[0]]?.short ?? topCategory[0]) : "—"}
+              </div>
               <div className="kpi-delta">
-                {summary.rejected ?? summary.falseReports} ditolak
-                {summary.rejected !== undefined ? ` (${summary.falseReports} palsu)` : ""}
+                {topCategory ? `${topCategory[1]} laporan (${percent(topCategory[1], summary.total)})` : "Belum ada laporan"}
+              </div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Wilayah paling rawan</div>
+              <div className="kpi-value">{topRegion?.name ?? "—"}</div>
+              <div className="kpi-delta">
+                {topRegion?.topCategory
+                  ? `${topRegion.count} laporan · terbanyak ${topRegion.topCategory.label}`
+                  : "Belum ada data wilayah"}
               </div>
             </div>
             <div className="kpi-card">
@@ -172,7 +178,7 @@ export function AnalyticsPage({
               <header className="card-head">
                 <div>
                   <div className="eyebrow">LOKASI TERBANYAK</div>
-                  <h3>Desa/kelurahan &amp; jenis kasus</h3>
+                  <h3>Jenis kasus tertinggi tiap desa/kelurahan</h3>
                 </div>
                 <Flame size={18} className="muted" />
               </header>
@@ -183,9 +189,6 @@ export function AnalyticsPage({
                   <span>Kasus terbanyak</span>
                   <span>Rincian kasus</span>
                   <span className="num">Total</span>
-                  <span className="num">P1</span>
-                  <span className="num">Diproses</span>
-                  <span className="num">Selesai</span>
                 </div>
                 {summary.topLocations.map((loc, index) => (
                   <div className="loc-rank-row" key={loc.id ?? "none"}>
@@ -206,9 +209,6 @@ export function AnalyticsPage({
                       ))}
                     </span>
                     <span className="num"><b>{loc.count}</b></span>
-                    <span className="num">{loc.p1}</span>
-                    <span className="num">{loc.processing}</span>
-                    <span className="num">{loc.closed}</span>
                   </div>
                 ))}
                 {summary.topLocations.length === 0 ? (

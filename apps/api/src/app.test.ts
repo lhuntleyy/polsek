@@ -193,6 +193,76 @@ describe("API foundation", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().settings.waNumber).toBe("081200000000");
   });
+
+  it("lets admin hide menus per role and exposes them on login and /api/me", async () => {
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "admin", password: "Admin#12345" }
+    });
+    const adminCookie = sessionCookie(login);
+    expect(login.json().hiddenMenus).toEqual([]);
+
+    const saved = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie: adminCookie },
+      payload: { menu_hidden: { piket: ["analytics", "guide"], urc: ["map"] } }
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().settings.menuHidden).toEqual({
+      piket: ["analytics", "guide"],
+      urc: ["map"]
+    });
+
+    const piketLogin = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "piket", password: "Demo#12345" }
+    });
+    expect(piketLogin.json().hiddenMenus).toEqual(["analytics", "guide"]);
+    const me = await app.inject({
+      method: "GET",
+      url: "/api/me",
+      headers: { cookie: sessionCookie(piketLogin) }
+    });
+    expect(me.json().hiddenMenus).toEqual(["analytics", "guide"]);
+
+    // Admin tidak boleh mengunci dirinya sendiri dari menu Sistem.
+    const lockout = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie: adminCookie },
+      payload: { menu_hidden: { admin: ["system"] } }
+    });
+    expect(lockout.statusCode).toBe(400);
+
+    // Setiap role wajib punya minimal satu menu yang tampil.
+    const empty = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie: adminCookie },
+      payload: { menu_hidden: { bhabin: ["live", "reports", "map", "analytics", "system", "guide"] } }
+    });
+    expect(empty.statusCode).toBe(400);
+
+    // Non-admin tidak bisa mengubah pengaturan menu.
+    const forbidden = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie: sessionCookie(piketLogin) },
+      payload: { menu_hidden: {} }
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const reset = await app.inject({
+      method: "PATCH",
+      url: "/api/settings",
+      headers: { cookie: adminCookie },
+      payload: { menu_hidden: {} }
+    });
+    expect(reset.json().settings.menuHidden).toEqual({});
+  });
 });
 
 const INTERNAL_TOKEN = "test-internal-token-123456";
@@ -487,6 +557,20 @@ describe("WhatsApp conversation engine", () => {
     expect(ticket?.priority).toBe("P1");
     expect(ticket?.category).toBe("kebakaran");
     expect(ticket?.title).toContain("rumah warga terbakar");
+
+    // Darurat di dalam wilkum langsung diteruskan ke grup URC tanpa menunggu piket.
+    const dispatched = app.sqlite
+      .prepare(
+        "SELECT t.status, t.ack_at, t.ticket_no FROM tickets t JOIN reporters r ON r.id = t.reporter_id WHERE r.wa_jid = ?"
+      )
+      .get(sender) as { status: string; ack_at: string | null; ticket_no: string };
+    expect(dispatched.status).toBe("diterima");
+    expect(dispatched.ack_at).toBeTruthy();
+    const forward = app.sqlite
+      .prepare("SELECT payload_json FROM outbound_messages WHERE target_jid = ? AND payload_json LIKE ?")
+      .get(GROUP_JID, `%${dispatched.ticket_no}%`) as { payload_json: string } | undefined;
+    expect(forward?.payload_json).toContain("Balas (reply) untuk menanggapi");
+    expect(forward?.payload_json).not.toContain("TUNDA <alasan>");
   });
 
   it("does not create P1 when DARURAT is sent without saying what happened", async () => {
@@ -721,6 +805,104 @@ describe("WhatsApp conversation engine", () => {
     });
     expect(detail.json().ticket.status).toBe("selesai");
     expect(detail.json().ticket.closeNote).toBe("Ditangani URC");
+  });
+
+  it("treats a free-text reply (/tanggap) as the officer heading out and tells the reporter", async () => {
+    const sender = "6281111111127@s.whatsapp.net";
+    const flow = [
+      { type: "text" as const, text: "LAPOR" },
+      { type: "text" as const, text: "Rina Tanggap" },
+      { type: "text" as const, text: "2" },
+      { type: "text" as const, text: "Helm dicuri di warung." },
+      { type: "location" as const, location: { lat: -6.241, lng: 106.978 } },
+      { type: "text" as const, text: "SELESAI" },
+      { type: "text" as const, text: "1" }
+    ];
+    for (const step of flow) {
+      await app.inject({
+        method: "POST",
+        url: "/internal/wa/inbound",
+        headers: internalHeaders(),
+        payload: inbound(sender, step.type, step)
+      });
+    }
+    const row = app.sqlite
+      .prepare(
+        "SELECT t.id, t.ticket_no, t.status FROM tickets t JOIN reporters r ON r.id = t.reporter_id WHERE r.wa_jid = ?"
+      )
+      .get(sender) as { id: string; ticket_no: string; status: string };
+    // Laporan biasa tetap menunggu ACC piket/admin dan belum masuk grup.
+    expect(row.status).toBe("baru");
+    const beforeAccept = app.sqlite
+      .prepare("SELECT COUNT(*) AS n FROM outbound_messages WHERE target_jid = ? AND payload_json LIKE ?")
+      .get(GROUP_JID, `%${row.ticket_no}%`) as { n: number };
+    expect(beforeAccept.n).toBe(0);
+
+    await app.inject({
+      method: "POST",
+      url: `/api/tickets/${row.id}/transition`,
+      headers: { cookie },
+      payload: { to: "diterima" }
+    });
+
+    const groupCommand = (text: string) =>
+      app.inject({
+        method: "POST",
+        url: "/internal/wa/group-command",
+        headers: internalHeaders(),
+        payload: {
+          waMessageId: randomUUID(),
+          groupJid: GROUP_JID,
+          senderJid: "628000000005@s.whatsapp.net",
+          text,
+          timestamp: new Date().toISOString()
+        }
+      });
+    const first = await groupCommand(`/tanggap ${row.ticket_no} siap meluncur ndan`);
+    expect(first.statusCode).toBe(200);
+    const status = app.sqlite.prepare("SELECT status, assigned_to FROM tickets WHERE id = ?").get(row.id) as {
+      status: string;
+      assigned_to: string | null;
+    };
+    expect(status.status).toBe("otw");
+    expect(status.assigned_to).toBeTruthy();
+    const reporterText = (
+      app.sqlite
+        .prepare(
+          "SELECT payload_json FROM outbound_messages WHERE target_jid = ? ORDER BY created_at DESC LIMIT 1"
+        )
+        .get(sender) as { payload_json: string }
+    ).payload_json;
+    expect(reporterText).toContain("sedang jalan ke TKP");
+    // Obrolan anggota tidak diteruskan ke pelapor.
+    expect(reporterText).not.toContain("ndan");
+
+    // Reply berikutnya (tiket sudah OTW) diam saja, tidak membanjiri grup.
+    const second = await groupCommand(`/tanggap ${row.ticket_no} saya juga merapat`);
+    expect(second.json().reason).toBe("response_ignored");
+    expect(second.json().replies).toBe(0);
+  });
+
+  it("filters the ticket list by category and date range", async () => {
+    const all = await app.inject({ method: "GET", url: "/api/tickets?limit=100", headers: { cookie } });
+    const items = all.json().items as Array<{ category: string; createdAt: string }>;
+    const category = items[0]!.category;
+    const byCategory = await app.inject({
+      method: "GET",
+      url: `/api/tickets?limit=100&category=${category}`,
+      headers: { cookie }
+    });
+    expect(byCategory.statusCode).toBe(200);
+    const filtered = byCategory.json().items as Array<{ category: string }>;
+    expect(filtered.length).toBe(items.filter((item) => item.category === category).length);
+    expect(filtered.every((item) => item.category === category)).toBe(true);
+
+    const future = await app.inject({
+      method: "GET",
+      url: `/api/tickets?limit=100&from=${encodeURIComponent(new Date(Date.now() + 86_400_000).toISOString())}`,
+      headers: { cookie }
+    });
+    expect(future.json().items).toHaveLength(0);
   });
 
   it("updates gateway status through the internal endpoint", async () => {

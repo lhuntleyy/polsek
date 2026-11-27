@@ -1,8 +1,10 @@
 /**
  * Aksi tiket "by reply" di grup URC.
  *
- * Anggota cukup me-reply pesan tiket dari bot (forward tiket atau pesan status)
- * dengan kata seperti "otw", "tiba", "selesai", atau "tunda <alasan>".
+ * Anggota cukup me-reply pesan tiket dari bot. Balasan bebas apa pun ke pesan
+ * forward tiket ("siap", "meluncur ndan", dst.) berarti anggota itu menanggapi
+ * dan menuju lokasi → "/tanggap", dan pelapor dikabari. Kata kunci lama
+ * ("otw", "tiba", "selesai", "tunda <alasan>") tetap dikenali.
  * Nomor tiket diambil dari pesan yang di-reply, lalu balasan diterjemahkan
  * menjadi perintah grup biasa (mis. "/otw DEMO-261123-014") sehingga API
  * memakai validasi yang sama: nomor petugas terdaftar, role, transisi status,
@@ -23,6 +25,11 @@ const ACTION_PATTERNS: Array<[GroupAction, RegExp]> = [
   ["tunda", /^tunda\b/i],
   ["status", /^status\b/i]
 ];
+
+/** Pesan forward tiket dari bot selalu memuat baris "Pelapor:". */
+function isTicketForward(quotedText: string): boolean {
+  return /^Pelapor:/m.test(quotedText);
+}
 
 /** Nomor tiket pertama di teks pesan yang di-reply, atau null. */
 export function ticketNoFromQuoted(quotedText: string | undefined): string | null {
@@ -54,6 +61,11 @@ export function replyToGroupCommand(
     rest = rest.replace(/^#?(?:[A-Z0-9]{2,12}-\d{6}-)?\d{1,6}\b/i, "").trim();
     rest = rest.replace(/^[-:,.]\s*/, "").trim();
     return [`/${action}`, ticketNo, rest].filter(Boolean).join(" ");
+  }
+  // Balasan bebas ke forward tiket = menanggapi (menuju lokasi). Reply ke
+  // pesan status bot (mis. "🚓 ... sedang jalan ke TKP") tetap diabaikan.
+  if (quotedText && isTicketForward(quotedText) && !body.startsWith("/")) {
+    return ["/tanggap", ticketNo, body].join(" ");
   }
   return null;
 }

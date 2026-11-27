@@ -5,7 +5,7 @@ const FORWARD = [
   "🚨 *P1 · Lainnya*",
   "#DEMO-261123-014 — DARURAT Lainnya: kasih sayang",
   "Pelapor: janda muda (62895410342813)",
-  "Aksi: balas (reply) pesan ini dengan OTW, TIBA, SELESAI, atau TUNDA <alasan>"
+  "*Balas (reply) untuk menanggapi*"
 ].join("\n");
 
 describe("ticketNoFromQuoted", () => {
@@ -46,10 +46,18 @@ describe("replyToGroupCommand", () => {
     expect(replyToGroupCommand(text, FORWARD)).toBe(expected);
   });
 
-  it("ignores ordinary chat replies", () => {
-    expect(replyToGroupCommand("siap ndan", FORWARD)).toBeNull();
-    expect(replyToGroupCommand("otwnya siapa?", FORWARD)).toBeNull();
+  it("treats any other reply to a ticket forward as a response (heading there)", () => {
+    expect(replyToGroupCommand("siap ndan", FORWARD)).toBe("/tanggap DEMO-261123-014 siap ndan");
+    expect(replyToGroupCommand("otwnya siapa?", FORWARD)).toBe(
+      "/tanggap DEMO-261123-014 otwnya siapa?"
+    );
+  });
+
+  it("ignores empty replies and free chat on bot status messages", () => {
     expect(replyToGroupCommand("", FORWARD)).toBeNull();
+    expect(
+      replyToGroupCommand("mantap", "🚓 DEMO-261123-014 — *Bripka Andi* sedang jalan ke TKP.")
+    ).toBeNull();
   });
 
   it("ignores replies to messages without a ticket number", () => {

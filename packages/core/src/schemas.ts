@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { REJECT_REASONS } from "./constants.js";
 import { CATEGORIES, PRIORITIES, ROLES, TICKET_STATUSES } from "./types.js";
+import { MENU_IDS, visibleMenusFor } from "./menu.js";
 import {
   isValidPhone,
   isWhatsAppGroupJid,
@@ -131,9 +132,22 @@ export const settingsPatchSchema = z
     escalation_pawas_seconds: z.number().int().positive().max(86400).optional(),
     escalation_kapolsek_seconds: z.number().int().positive().max(86400).optional(),
     alarm_sound_required: z.boolean().optional(),
-    pii_masking: z.boolean().optional()
+    pii_masking: z.boolean().optional(),
+    menu_hidden: z
+      .partialRecord(z.enum(ROLES), z.array(z.enum(MENU_IDS)).max(MENU_IDS.length))
+      .optional()
   })
   .strict()
+  .refine(
+    (value) => !value.menu_hidden?.admin?.includes("system"),
+    { message: "Menu Sistem tidak boleh disembunyikan dari admin", path: ["menu_hidden", "admin"] }
+  )
+  .refine(
+    (value) =>
+      !value.menu_hidden ||
+      ROLES.every((role) => visibleMenusFor(role, value.menu_hidden ?? {}).length > 0),
+    { message: "Setiap role harus punya minimal satu menu yang tampil", path: ["menu_hidden"] }
+  )
   .refine(
     (value) =>
       value.escalation_pawas_seconds === undefined ||
@@ -149,6 +163,9 @@ export const ticketQuerySchema = z.object({
   status: z.enum(TICKET_STATUSES).optional(),
   priority: z.enum(PRIORITIES).optional(),
   regionId: z.string().min(1).optional(),
+  category: z.enum(CATEGORIES).optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
   q: z.string().trim().max(120).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().optional()

@@ -159,14 +159,15 @@ function groupMediaDrafts(
 }
 
 /**
- * Kirim tiket ke grup URC. Dipanggil saat piket pertama kali menerima laporan
- * (baru -> diterima), BUKAN saat laporan masuk, supaya URC hanya menerima
- * laporan yang sudah diverifikasi piket.
+ * Kirim tiket ke grup URC. Laporan biasa dikirim saat piket/admin pertama kali
+ * menerima laporan (baru -> diterima). Laporan DARURAT dikirim langsung saat
+ * tiket dibuat (lihat autoDispatchEmergency) tanpa menunggu piket.
  */
 export function dispatchTicketToUrc(
   app: FastifyInstance,
   ticketId: string,
-  acceptedByName?: string | null
+  acceptedByName?: string | null,
+  options: { emergency?: boolean } = {}
 ): number {
   const settings = readSettings(app.db, app.config);
   if (!settings.waGroupUrcJid) return 0;
@@ -206,7 +207,8 @@ export function dispatchTicketToUrc(
     `Peta: ${peta}`,
     `Masuk: ${formatLocalTime(ticket.createdAt, settings.unitTimezone)}`,
     acceptedByName ? `Diterima piket: ${acceptedByName}` : null,
-    "Aksi: *balas (reply) pesan ini* dengan OTW, TIBA, SELESAI, atau TUNDA <alasan>"
+    options.emergency ? "⚡ Darurat: langsung diteruskan sistem, piket ikut memantau." : null,
+    "*Balas (reply) untuk menanggapi*"
   ]
     .filter(Boolean)
     .join("\n");
@@ -224,11 +226,45 @@ export function dispatchTicketToUrc(
       actorId: null,
       fromStatus: ticket.status,
       toStatus: ticket.status,
-      note: "Diteruskan ke grup URC setelah diterima piket",
+      note: options.emergency
+        ? "Darurat: langsung diteruskan ke grup URC"
+        : "Diteruskan ke grup URC setelah diterima piket",
       createdAt: new Date().toISOString()
     })
     .run();
   return drafts.length;
+}
+
+/**
+ * Laporan DARURAT tidak menunggu piket: tiket otomatis berstatus "diterima"
+ * (oleh sistem) lalu langsung diteruskan ke grup URC. Dengan ackAt terisi,
+ * update lokasi/media/status berikutnya juga ikut diteruskan ke grup.
+ * Bila grup URC belum diatur, tiket tetap "baru" dan menunggu piket.
+ */
+function autoDispatchEmergency(app: FastifyInstance, ticketId: string): boolean {
+  const settings = readSettings(app.db, app.config);
+  if (!settings.waGroupUrcJid) return false;
+  const now = new Date().toISOString();
+  app.db
+    .update(tickets)
+    .set({ status: "diterima", ackAt: now, updatedAt: now })
+    .where(eq(tickets.id, ticketId))
+    .run();
+  app.db
+    .insert(ticketEvents)
+    .values({
+      id: randomUUID(),
+      ticketId,
+      actorType: "system",
+      actorId: null,
+      fromStatus: "baru",
+      toStatus: "diterima",
+      note: "Darurat: diterima otomatis oleh sistem",
+      createdAt: now
+    })
+    .run();
+  dispatchTicketToUrc(app, ticketId, null, { emergency: true });
+  return true;
 }
 
 function parseContext(value: string): ConversationContext {
@@ -1041,6 +1077,26 @@ function handleInboundCore(
         .run();
       replies.push(reply(input.chatJid, outsideEmergencyReply(app, nearestId, regionList)));
     }
+    // Darurat di dalam wilkum langsung ke grup URC; yang terdeteksi di luar
+    // wilkum tetap menunggu verifikasi piket (bisa jadi wewenang Polsek lain).
+    if (!outside && autoDispatchEmergency(app, created.ticket.id)) {
+      replies.push(
+        reply(input.chatJid, "Laporan darurat Anda langsung diteruskan ke tim URC di lapangan.")
+      );
+      const dispatched = app.db.select().from(tickets).where(eq(tickets.id, created.ticket.id)).get();
+      if (dispatched) {
+        afterCommitHooks.push(() => {
+          app.bus.broadcast("ticket.updated", {
+            id: dispatched.id,
+            ticketNo: dispatched.ticketNo,
+            status: dispatched.status,
+            priority: dispatched.priority,
+            title: dispatched.title,
+            regionId: dispatched.regionId
+          });
+        });
+      }
+    }
     saveConversation(app, conversation.id, "AWAIT_MEDIA", context, reporter.id);
     replies.push(reply(input.chatJid, "Kirim foto/video kejadian jika ada, atau ketik SELESAI."));
     return { replies, afterCommit: combineAfterCommit() };
@@ -1218,7 +1274,8 @@ function handleInboundCore(
         .from(tickets)
         .where(eq(tickets.id, context.emergencyTicketId))
         .get();
-      // Media hanya diteruskan ke grup bila tiket sudah diterima piket.
+      // Media hanya diteruskan ke grup bila tiket sudah diteruskan (diterima
+      // piket, atau darurat yang diterima otomatis).
       if (settings.waGroupUrcJid && emergencyTicket?.ackAt) {
         replies.push(
           ...groupMediaDrafts(
@@ -1738,7 +1795,7 @@ function handleInboundCore(
           replies.push(
             reply(
               input.chatJid,
-              "Laporan darurat Anda sudah diteruskan ke piket. Setelah diterima piket, tim URC akan meluncur. Balas STATUS untuk cek status."
+              "Laporan darurat Anda sudah diteruskan ke tim URC dan dipantau piket. Balas STATUS untuk cek status."
             )
           );
         } else {
@@ -1934,10 +1991,15 @@ export function handleGroupCommand(
     };
   }
 
-  const match = /^\/(otw|tiba|selesai|tunda|status)\s+([A-Za-z0-9-]+)\s*([\s\S]*)$/i.exec(trimmed);
+  const match = /^\/(otw|tiba|selesai|tunda|status|tanggap)\s+([A-Za-z0-9-]+)\s*([\s\S]*)$/i.exec(
+    trimmed
+  );
   if (!match) return { replies: [], reason: "invalid_command" };
 
-  const command = (match[1] ?? "").toLowerCase();
+  // "/tanggap" = anggota me-reply pesan tiket dengan kalimat bebas. Artinya
+  // anggota itu menanggapi dan menuju lokasi (OTW); pelapor dikabari.
+  const isResponse = (match[1] ?? "").toLowerCase() === "tanggap";
+  const command = isResponse ? "otw" : (match[1] ?? "").toLowerCase();
   const ref = (match[2] ?? "").trim();
   const note = (match[3] ?? "").trim();
   const group = app.db.select().from(waGroups).where(eq(waGroups.jid, input.groupJid)).get();
@@ -1998,6 +2060,11 @@ export function handleGroupCommand(
           ? "selesai"
           : "ditunda";
   if (!canTransition(ticket.status as TicketStatus, to, officer.role as Role)) {
+    if (isResponse) {
+      // Tiket sudah ditanggapi/ditangani anggota lain (atau belum diterima):
+      // obrolan reply berikutnya tidak perlu dibalas bot agar grup tidak ramai.
+      return { replies: [], reason: "response_ignored" };
+    }
     const statusAllowed = ALLOWED_TRANSITIONS[ticket.status as TicketStatus]?.includes(to);
     const allowedRoles = (TRANSITION_ROLES[`${ticket.status}->${to}`] ?? []).filter(
       (role) => role !== "system" && role !== "reporter"
@@ -2078,7 +2145,7 @@ export function handleGroupCommand(
     action: "ticket.group_command",
     entity: "ticket",
     entityId: ticket.id,
-    meta: { command, from: ticket.status, to, media: attachedMedia },
+    meta: { command: isResponse ? "tanggap" : command, from: ticket.status, to, media: attachedMedia },
     ip: null,
     userAgent: null
   });
@@ -2097,7 +2164,12 @@ export function handleGroupCommand(
       ? resolveReporterJid(reporter, app.config.SIGAP_PHONE_KEY)
       : null;
     if (targetJid) {
-      replies.push(reply(targetJid, reporterStatusMessage(ticket.ticketNo, to, note, officer.name)));
+      replies.push(
+        reply(
+          targetJid,
+          reporterStatusMessage(ticket.ticketNo, to, isResponse ? null : note, officer.name)
+        )
+      );
     }
   }
 

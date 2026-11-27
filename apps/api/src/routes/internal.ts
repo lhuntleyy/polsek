@@ -167,7 +167,9 @@ export function registerInternalRoutes(app: FastifyInstance): void {
 
   app.post(
     "/internal/wa/status",
-    { preHandler: app.requireInternal },
+    // Dipanggil bot tiap 1-3 detik: jangan catat setiap request (banjir log
+    // memperlambat proses dev dan menenggelamkan log penting).
+    { preHandler: app.requireInternal, logLevel: "warn" },
     async (request) => {
       const input = gatewaySchema.parse(request.body);
       const patch: Parameters<typeof app.gateway.update>[0] = { status: input.status };
@@ -189,7 +191,9 @@ export function registerInternalRoutes(app: FastifyInstance): void {
 
   app.get(
     "/internal/wa/control",
-    { preHandler: app.requireInternal },
+    // Dipanggil bot tiap 1-3 detik: jangan catat setiap request (banjir log
+    // memperlambat proses dev dan menenggelamkan log penting).
+    { preHandler: app.requireInternal, logLevel: "warn" },
     async () => {
       app.gateway.touchBot();
       return { command: app.gateway.pendingCommand() };
@@ -244,7 +248,9 @@ export function registerInternalRoutes(app: FastifyInstance): void {
 
   app.get(
     "/internal/outbox",
-    { preHandler: app.requireInternal },
+    // Dipanggil bot tiap 1-3 detik: jangan catat setiap request (banjir log
+    // memperlambat proses dev dan menenggelamkan log penting).
+    { preHandler: app.requireInternal, logLevel: "warn" },
     async (request) => {
       const query = z
         .object({ limit: z.coerce.number().int().min(1).max(50).default(20) })

@@ -17,8 +17,8 @@ import { STATUS_META, filterTickets, shortTicket } from "./lib/format";
 import { applyTheme, getInitialTheme, type Theme } from "./lib/theme";
 import { LoginPage } from "./components/LoginPage";
 import { ChangePasswordPage } from "./components/ChangePasswordPage";
-import { Shell, type View } from "./components/Shell";
-import { LiveBoard, type LiveFilter } from "./components/LiveBoard";
+import { Shell, visibleViews, type View } from "./components/Shell";
+import { LiveBoard } from "./components/LiveBoard";
 import { AlarmBanner } from "./components/AlarmBanner";
 
 const MapPage = lazy(() =>
@@ -29,6 +29,9 @@ const HandoverPage = lazy(() =>
 );
 const DataPage = lazy(() =>
   import("./components/DataPage").then((module) => ({ default: module.DataPage }))
+);
+const ReportsPage = lazy(() =>
+  import("./components/ReportsPage").then((module) => ({ default: module.ReportsPage }))
 );
 const AnalyticsPage = lazy(() =>
   import("./components/AnalyticsPage").then((module) => ({ default: module.AnalyticsPage }))
@@ -60,10 +63,11 @@ export default function App() {
   const [bootLoading, setBootLoading] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [view, setView] = useState<View>("live");
+  // Menu yang disembunyikan admin untuk role user ini (dari login / /api/me).
+  const [hiddenMenus, setHiddenMenus] = useState<View[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [detail, setDetail] = useState<TicketDetail | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<LiveFilter>("all");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
@@ -197,7 +201,10 @@ export default function App() {
       ]);
       if (cancelled) return;
       if (configResult.status === "fulfilled") setConfig(configResult.value);
-      if (meResult.status === "fulfilled") acceptUser(meResult.value.user);
+      if (meResult.status === "fulfilled") {
+        setHiddenMenus(meResult.value.hiddenMenus ?? []);
+        acceptUser(meResult.value.user);
+      }
       setBootLoading(false);
     })();
     return () => {
@@ -401,7 +408,7 @@ export default function App() {
         return;
       }
       if (key === "j" || key === "k") {
-        const list = filterTickets(tickets, filter, search);
+        const list = filterTickets(tickets, "all", search);
         if (list.length === 0) return;
         const currentIndex = selectedRef.current
           ? list.findIndex((ticket) => ticket.id === selectedRef.current)
@@ -419,7 +426,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [user, tickets, filter, search]);
+  }, [user, tickets, search]);
 
   useEffect(() => {
     return () => {
@@ -432,6 +439,7 @@ export default function App() {
     setLoginError(null);
     try {
       const result = await api.login(username, password, totp);
+      setHiddenMenus(result.hiddenMenus ?? []);
       acceptUser(result.user);
       setConfig((previous) =>
         previous
@@ -646,7 +654,15 @@ export default function App() {
     if (window.innerWidth <= 1200) document.body.classList.add("detail-open");
   }
 
+  // Bila menu yang sedang dibuka disembunyikan admin, pindah ke menu pertama yang tampil.
+  useEffect(() => {
+    if (!user) return;
+    const allowed = visibleViews(user.role, hiddenMenus);
+    if (allowed.length && !allowed.includes(view)) setView(allowed[0]!);
+  }, [user, hiddenMenus, view]);
+
   function handleView(next: View) {
+    if (user && !visibleViews(user.role, hiddenMenus).includes(next)) return;
     setView(next);
     document.body.classList.remove("detail-open");
   }
@@ -679,6 +695,11 @@ export default function App() {
     ["baru", "diterima", "otw", "ditkp", "ditunda"].includes(ticket.status)
   ).length;
   const canRevealPhone = ["admin", "pawas", "piket", "kapolsek", "urc"].includes(user.role);
+  // Daftar Laporan dimuat ulang bila antrean live berubah (tiket baru/terupdate).
+  const reportsRefreshKey = tickets.reduce(
+    (key, ticket) => (ticket.updatedAt > key ? ticket.updatedAt : key),
+    String(tickets.length)
+  );
 
   return (
     <>
@@ -710,6 +731,7 @@ export default function App() {
         onToggleTheme={() => setTheme((previous) => (previous === "light" ? "dark" : "light"))}
         waStatus={waStatus}
         env={config?.env}
+        hiddenMenus={hiddenMenus}
       >
         <Suspense fallback={<div className="panel data-empty">Memuat modul...</div>}>
         {view === "live" ? (
@@ -720,11 +742,9 @@ export default function App() {
             userRole={user.role}
             detail={detail}
             selectedId={selectedId}
-            filter={filter}
             search={search}
             busy={busy}
             canRevealPhone={canRevealPhone}
-            onFilter={setFilter}
             onSelect={(id) => void selectTicket(id)}
             onCloseDetail={closeDetail}
             onRefresh={() => void refreshTickets()}
@@ -732,6 +752,15 @@ export default function App() {
             onNote={handleNote}
             onCreateManual={handleCreateManual}
             onMerged={handleMerged}
+          />
+        ) : null}
+
+        {view === "reports" ? (
+          <ReportsPage
+            regions={regions}
+            refreshKey={reportsRefreshKey}
+            onOpenTicket={openTicketFromMap}
+            onToast={showToast}
           />
         ) : null}
 
@@ -778,6 +807,7 @@ export default function App() {
             onTotpEnabled={() =>
               setUser((previous) => (previous ? { ...previous, totpEnabled: true } : previous))
             }
+            onMenuSaved={(menuHidden) => setHiddenMenus(menuHidden[user.role] ?? [])}
           />
         ) : null}
 

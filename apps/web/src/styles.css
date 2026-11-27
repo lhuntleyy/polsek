@@ -1828,7 +1828,7 @@ kbd {
 .loc-rank { display: flex; flex-direction: column; font-size: 12px; }
 .loc-rank-row {
   display: grid;
-  grid-template-columns: 28px minmax(120px, 1.3fr) minmax(110px, 1fr) minmax(160px, 2fr) repeat(4, 58px);
+  grid-template-columns: 28px minmax(120px, 1.3fr) minmax(110px, 1fr) minmax(160px, 2fr) 58px;
   gap: 8px;
   align-items: center;
   padding: 7px 4px;
@@ -1857,10 +1857,8 @@ kbd {
   white-space: nowrap;
 }
 @media (max-width: 900px) {
-  .loc-rank-row { grid-template-columns: 22px 1fr 1fr 44px 52px; }
-  .loc-rank-row > :nth-child(4),
-  .loc-rank-row > :nth-child(6),
-  .loc-rank-row > :nth-child(8) { display: none; }
+  .loc-rank-row { grid-template-columns: 22px 1fr 1fr 52px; }
+  .loc-rank-row > :nth-child(4) { display: none; }
 }
 .chart-card { padding: 13px 14px; display: flex; flex-direction: column; min-height: 0; }
 .chart-card.span-2 { grid-column: span 2; }

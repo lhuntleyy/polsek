@@ -141,7 +141,20 @@ export interface UnitSettings {
   escalationKapolsekSeconds: number;
   alarmSoundRequired: boolean;
   piiMasking: boolean;
+  /** Menu yang disembunyikan admin per role. */
+  menuHidden: Partial<Record<Role, MenuId[]>>;
 }
+
+/** Menu navigasi dashboard. */
+export type MenuId =
+  | "live"
+  | "reports"
+  | "map"
+  | "analytics"
+  | "data"
+  | "handover"
+  | "system"
+  | "guide";
 
 export interface SystemStatus {
   version: string;

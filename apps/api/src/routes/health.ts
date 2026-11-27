@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 export function registerHealthRoutes(app: FastifyInstance): void {
-  app.get("/health", async () => {
+  app.get("/health", { logLevel: "warn" }, async () => {
     let dbOk = true;
     try {
       app.sqlite.prepare("SELECT 1").get();

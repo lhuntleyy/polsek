@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { AppConfig } from "@sigap/config";
-import type { SettingsPatch } from "@sigap/core";
+import { sanitizeMenuHidden, type MenuHidden, type SettingsPatch } from "@sigap/core";
 import type { Db } from "../db/client.js";
 import { settings } from "../db/schema.js";
 import { DEFAULT_UNIT_ID } from "./constants.js";
@@ -21,6 +21,8 @@ export interface UnitSettings {
   escalationKapolsekSeconds: number;
   alarmSoundRequired: boolean;
   piiMasking: boolean;
+  /** Menu yang disembunyikan admin per role. */
+  menuHidden: MenuHidden;
 }
 
 export function defaultsFromConfig(config: AppConfig): UnitSettings {
@@ -39,7 +41,8 @@ export function defaultsFromConfig(config: AppConfig): UnitSettings {
     escalationPawasSeconds: config.SIGAP_ESCALATION_PAWAS_SECONDS,
     escalationKapolsekSeconds: config.SIGAP_ESCALATION_KAPOLSEK_SECONDS,
     alarmSoundRequired: true,
-    piiMasking: true
+    piiMasking: true,
+    menuHidden: {}
   };
 }
 
@@ -68,6 +71,13 @@ export function readSettings(db: Db, config: AppConfig): UnitSettings {
     else if (key === "escalation_kapolsek_seconds") result.escalationKapolsekSeconds = Number(row.value) || result.escalationKapolsekSeconds;
     else if (key === "alarm_sound_required") result.alarmSoundRequired = row.value === "true";
     else if (key === "pii_masking") result.piiMasking = row.value === "true";
+    else if (key === "menu_hidden") {
+      try {
+        result.menuHidden = sanitizeMenuHidden(JSON.parse(row.value));
+      } catch {
+        result.menuHidden = {};
+      }
+    }
   }
 
   return result;
@@ -117,7 +127,12 @@ export function writeSettings(
     if (value === undefined) continue;
     // Patch keys are already the snake_case keys used in the settings table.
     const dbKey = key;
-    const serialized = typeof value === "boolean" ? String(value) : String(value);
+    const serialized =
+      key === "menu_hidden"
+        ? JSON.stringify(sanitizeMenuHidden(value))
+        : typeof value === "object" && value !== null
+          ? JSON.stringify(value)
+          : String(value);
     db.insert(settings)
       .values({
         unitId: DEFAULT_UNIT_ID,

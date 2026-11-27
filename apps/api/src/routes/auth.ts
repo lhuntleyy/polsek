@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { changePasswordSchema, loginSchema, totpEnableSchema } from "@sigap/core";
+import { changePasswordSchema, loginSchema, totpEnableSchema, type Role } from "@sigap/core";
 import { officers, sessions } from "../db/schema.js";
 import { writeAudit } from "../lib/audit.js";
 import {
@@ -221,6 +221,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       return {
         user: publicUser(officer),
         unit: { name: unit.unitName, code: unit.unitCode, timezone: unit.unitTimezone },
+        hiddenMenus: unit.menuHidden[officer.role as Role] ?? [],
         expiresAt
       };
     }
@@ -255,7 +256,11 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       .from(officers)
       .where(eq(officers.id, user.id))
       .get();
-    return { user: { ...user, mustChangePassword: Boolean(row?.mustChangePassword) } };
+    const unitSettings = readSettings(app.db, app.config);
+    return {
+      user: { ...user, mustChangePassword: Boolean(row?.mustChangePassword) },
+      hiddenMenus: unitSettings.menuHidden[user.role as Role] ?? []
+    };
   });
 
   app.post(

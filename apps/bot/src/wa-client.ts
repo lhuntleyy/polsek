@@ -425,7 +425,7 @@ export class WhatsAppClient {
           }
           if (!normalized) continue;
           if (normalized.isGroup) {
-            // Reply "otw"/"tiba"/"selesai"/"tunda ..." ke pesan tiket → perintah grup.
+            // Reply ke pesan tiket → perintah grup (balasan bebas = /tanggap).
             const fromReply = replyToGroupCommand(normalized.text, normalized.quotedText);
             if (fromReply) {
               this.logger.info(
@@ -436,7 +436,7 @@ export class WhatsAppClient {
             } else if (ticketNoFromQuoted(normalized.quotedText)) {
               this.logger.info(
                 { messageId: normalized.waMessageId, reply: normalized.text?.slice(0, 80) },
-                "Reply ke pesan tiket diabaikan: bukan kata aksi"
+                "Reply ke pesan status tiket diabaikan"
               );
             }
             if (!normalized.text?.startsWith("/")) continue;
